@@ -1,0 +1,9 @@
+[project]
+name = "eduadcrm-lead-lifecycle"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+lead-lifecycle = "lead_lifecycle.main:main"
+
