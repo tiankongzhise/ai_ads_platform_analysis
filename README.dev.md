@@ -33,6 +33,7 @@ go run ./services/control-plane/cmd/control-plane
 psql $env:DATABASE_URL -f migrations/001_core_config_auth.sql
 psql $env:DATABASE_URL -f migrations/002_ad_oauth.sql
 psql $env:DATABASE_URL -f migrations/003_lead_lifecycle.sql
+psql $env:DATABASE_URL -f migrations/004_lead_conflict_attribution.sql
 ```
 
 运行 PostgreSQL 集成测试：
@@ -111,6 +112,16 @@ curl.exe -X POST http://127.0.0.1:8090/api/leads/imports -H "Content-Type: appli
 
 当前开发期使用内存仓储；`003_lead_lifecycle.sql` 已定义 PostgreSQL 表结构，后续阶段接入持久化 repository。
 
+## 冲突与归属验收
+
+不同团队上报相同手机号时，lead-lifecycle 会创建 open 冲突组，并按首次上报生成主咨询建议；管理者可通过前端“线索冲突”页面手动裁定主咨询。
+
+```powershell
+curl.exe http://127.0.0.1:8090/api/conflicts
+curl.exe -X POST http://127.0.0.1:8090/api/conflicts/{group_id}/resolve -H "Content-Type: application/json" -d "{\"primary_lead_id\":\"lead-id\",\"rule\":\"manual\",\"resolved_by\":\"demo-manager\"}"
+curl.exe http://127.0.0.1:8090/api/attributions/rules
+```
+
 ## 当前已落地接口
 
 - `GET /api/config`
@@ -149,3 +160,9 @@ curl.exe -X POST http://127.0.0.1:8090/api/leads/imports -H "Content-Type: appli
 - `GET /api/leads`
 - `POST /api/leads`
 - `POST /api/leads/batch`
+- `GET /api/conflicts`
+- `GET /api/conflicts/{group_id}`
+- `POST /api/conflicts/{group_id}/resolve`
+- `GET /api/attributions/rules`
+- `GET /api/attributions`
+- `POST /api/attributions/calculate`

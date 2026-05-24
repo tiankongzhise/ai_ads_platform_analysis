@@ -172,6 +172,28 @@ type Lead = {
   raw: Record<string, unknown>;
 };
 
+type ConflictItem = {
+  lead_id: string;
+  team_id: string;
+  is_primary: boolean;
+  conflict_role: string;
+  created_at: string;
+};
+
+type ConflictGroup = {
+  id: string;
+  tenant_id: string;
+  phone_masked: string;
+  status: string;
+  primary_lead_id: string;
+  conflict_count: number;
+  items: ConflictItem[];
+  resolution_meta: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  resolved_at?: string;
+};
+
 const platformOptions = [
   { value: 'douyin', label: '抖音/巨量引擎' },
   { value: 'tencent', label: '腾讯广告' },
@@ -236,6 +258,7 @@ function App() {
             { key: 'control', icon: <TeamOutlined />, label: '组织配置' },
             { key: 'oauth', icon: <ApiOutlined />, label: '广告授权' },
             { key: 'leads', icon: <ImportOutlined />, label: '线索导入' },
+            { key: 'conflicts', icon: <TeamOutlined />, label: '线索冲突' },
             { key: 'overview', icon: <DashboardOutlined />, label: '平台概览' }
           ]}
         />
@@ -250,6 +273,7 @@ function App() {
           {active === 'control' && <ControlPlanePage />}
           {active === 'oauth' && <OAuthPage />}
           {active === 'leads' && <LeadImportPage />}
+          {active === 'conflicts' && <ConflictPage />}
           {active === 'overview' && <OverviewPage />}
         </Content>
       </Layout>
@@ -853,6 +877,99 @@ function LeadImportPage() {
           ]}
         />
       </Card>
+    </Space>
+  );
+}
+
+function ConflictPage() {
+  const [groups, setGroups] = useState<ConflictGroup[]>([]);
+  const [selectedGroup, setSelectedGroup] = useState<ConflictGroup | null>(null);
+  const [leads, setLeads] = useState<Lead[]>([]);
+
+  const load = async () => {
+    setGroups(await api<ConflictGroup[]>('/api/conflicts'));
+    setLeads(await api<Lead[]>('/api/leads?limit=120'));
+  };
+
+  useEffect(() => {
+    void load().catch(() => undefined);
+  }, []);
+
+  const leadById = new Map(leads.map((lead) => [lead.id, lead]));
+
+  return (
+    <Space direction="vertical" size={16} className="page-stack">
+      <Typography.Title level={3}>线索冲突</Typography.Title>
+      <Card title="冲突组">
+        <Table
+          rowKey="id"
+          dataSource={groups}
+          pagination={{ pageSize: 8 }}
+          columns={[
+            { title: '冲突组 ID', dataIndex: 'id' },
+            { title: '手机号', dataIndex: 'phone_masked' },
+            { title: '状态', dataIndex: 'status', render: (status) => <Tag color={status === 'resolved' ? 'green' : 'orange'}>{status}</Tag> },
+            { title: '候选数', dataIndex: 'conflict_count' },
+            { title: '建议主咨询', dataIndex: 'primary_lead_id' },
+            {
+              title: '操作',
+              render: (_, row) => (
+                <Button
+                  size="small"
+                  onClick={async () => {
+                    const group = await api<ConflictGroup>(`/api/conflicts/${row.id}`);
+                    setSelectedGroup(group);
+                    await load();
+                  }}
+                >
+                  查看
+                </Button>
+              )
+            }
+          ]}
+        />
+      </Card>
+      {selectedGroup && (
+        <Card title="候选线索与裁定">
+          <Space direction="vertical" className="page-stack">
+            <Typography.Text>当前冲突组：{selectedGroup.id}</Typography.Text>
+            <Typography.Text code>{JSON.stringify(selectedGroup.resolution_meta)}</Typography.Text>
+            <Table
+              rowKey="lead_id"
+              dataSource={selectedGroup.items}
+              pagination={false}
+              columns={[
+                { title: '线索 ID', dataIndex: 'lead_id' },
+                { title: '团队', dataIndex: 'team_id' },
+                { title: '角色', dataIndex: 'conflict_role', render: (role) => <Tag>{role}</Tag> },
+                { title: '姓名', render: (_, row) => leadById.get(row.lead_id)?.student_name || '-' },
+                { title: '来源', render: (_, row) => leadById.get(row.lead_id)?.source_channel || '-' },
+                { title: '阶段', render: (_, row) => leadById.get(row.lead_id)?.stage || '-' },
+                {
+                  title: '裁定',
+                  render: (_, row) => (
+                    <Button
+                      size="small"
+                      disabled={selectedGroup.status === 'resolved'}
+                      onClick={async () => {
+                        const group = await api<ConflictGroup>(`/api/conflicts/${selectedGroup.id}/resolve`, {
+                          method: 'POST',
+                          body: JSON.stringify({ primary_lead_id: row.lead_id, rule: 'manual', resolved_by: 'frontend-user' })
+                        });
+                        setSelectedGroup(group);
+                        message.success('冲突已裁定');
+                        await load();
+                      }}
+                    >
+                      设为主咨询
+                    </Button>
+                  )
+                }
+              ]}
+            />
+          </Space>
+        </Card>
+      )}
     </Space>
   );
 }
