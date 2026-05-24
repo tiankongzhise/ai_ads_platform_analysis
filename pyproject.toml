@@ -1,0 +1,18 @@
+[project]
+name = "eduadcrm-services"
+version = "0.1.0"
+description = "EduAdCRM Python data-plane service workspace"
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+  "services/lead-lifecycle",
+  "services/data-insight",
+  "services/virtual-account",
+  "services/platform-ops",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests", "services"]
+

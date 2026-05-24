@@ -1,0 +1,12 @@
+{
+  "name": "eduadcrm-monorepo",
+  "private": true,
+  "workspaces": [
+    "apps/frontend-web"
+  ],
+  "scripts": {
+    "dev": "npm.cmd --prefix apps/frontend-web run dev",
+    "build": "npm.cmd --prefix apps/frontend-web run build"
+  }
+}
+

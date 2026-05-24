@@ -1,0 +1,22 @@
+auth:
+  access_token_ttl: 24h
+  refresh_token_ttl: 720h
+  refresh_token_rotation: true
+  logout_blacklist_enabled: true
+  issuer: eduadcrm
+  jwt_secret: dev-only-change-me
+  password_iterations: 210000
+config:
+  cache_refresh_interval: 30s
+  editable_keys:
+    - auth.access_token_ttl
+    - auth.refresh_token_ttl
+    - auth.refresh_token_rotation
+    - auth.logout_blacklist_enabled
+    - config.cache_refresh_interval
+oauth:
+  state_ttl: 10m
+  token_refresh_lock_ttl: 2m
+  redirect_success_url: http://localhost:5173/ad-accounts?oauth_result=success
+  redirect_error_url: http://localhost:5173/ad-accounts?oauth_result=error
+

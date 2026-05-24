@@ -1,0 +1,11 @@
+config/local.yaml
+.cache/
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+*.log
+.DS_Store
+coverage/
+tmp/

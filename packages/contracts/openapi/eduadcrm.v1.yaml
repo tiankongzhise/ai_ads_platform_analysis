@@ -1,0 +1,60 @@
+openapi: 3.1.0
+info:
+  title: EduAdCRM API
+  version: 0.1.0
+paths:
+  /api/config:
+    get:
+      summary: 获取平台配置定义与当前值
+  /api/config/{key}:
+    patch:
+      summary: 发布可编辑配置项
+  /api/config/{key}/rollback:
+    post:
+      summary: 回滚可编辑配置项
+  /api/config/change-logs:
+    get:
+      summary: 查询配置变更日志
+  /api/auth/register:
+    post:
+      summary: 注册租户管理员并签发 token
+  /api/auth/login:
+    post:
+      summary: 使用邮箱密码登录
+  /api/auth/refresh:
+    post:
+      summary: 使用 refresh token 换取新 token
+  /api/auth/logout:
+    post:
+      summary: 登出并撤销 refresh token
+  /api/auth/profile:
+    get:
+      summary: 获取当前用户资料
+  /api/orgs/tree:
+    get:
+      summary: 获取组织树
+  /api/orgs:
+    post:
+      summary: 创建组织节点
+  /api/teams:
+    get:
+      summary: 查询招生团队
+    post:
+      summary: 创建招生团队
+  /api/channels:
+    get:
+      summary: 查询广告渠道
+    post:
+      summary: 创建广告渠道
+  /api/oauth/{platform}/authorize:
+    post:
+      summary: 生成广告平台授权链接和一次性 state
+  /api/oauth/{platform}/callback:
+    get:
+      summary: 处理广告平台 OAuth 回调
+  /api/ad-accounts:
+    get:
+      summary: 查询广告账户引用
+  /api/ad-sync/jobs:
+    get:
+      summary: 查询广告同步任务
