@@ -6,13 +6,16 @@ from urllib.parse import parse_qs, urlparse
 
 try:
     from data_insight.adapters import baidu, xiaohongshu
+    from data_insight.bi import BIService
     from data_insight.etl import ETLService
 except ModuleNotFoundError:
     from adapters import baidu, xiaohongshu
+    from bi import BIService
     from etl import ETLService
 
 
 etl_service = ETLService()
+bi_service = BIService(etl_service)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -55,6 +58,24 @@ class Handler(BaseHTTPRequestHandler):
             return
         if parsed.path == "/api/etl/facts/hourly":
             self._json({"success": True, "data": etl_service.latest()["fact_hourly_aggregate"]})
+            return
+        if parsed.path == "/api/analytics/group-overview":
+            self._json({"success": True, "data": bi_service.overview()})
+            return
+        if parsed.path == "/api/analytics/team-efficiency":
+            self._json({"success": True, "data": bi_service.team_efficiency()})
+            return
+        if parsed.path == "/api/analytics/channel-roi":
+            self._json({"success": True, "data": bi_service.channel_roi()})
+            return
+        if parsed.path == "/api/analytics/funnel":
+            self._json({"success": True, "data": bi_service.funnel()})
+            return
+        if parsed.path == "/api/analytics/conflicts":
+            self._json({"success": True, "data": bi_service.conflicts()})
+            return
+        if parsed.path == "/api/analytics/hourly-trend":
+            self._json({"success": True, "data": bi_service.hourly_trend()})
             return
         self.send_error(404)
 
