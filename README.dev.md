@@ -32,6 +32,7 @@ go run ./services/control-plane/cmd/control-plane
 ```powershell
 psql $env:DATABASE_URL -f migrations/001_core_config_auth.sql
 psql $env:DATABASE_URL -f migrations/002_ad_oauth.sql
+psql $env:DATABASE_URL -f migrations/003_lead_lifecycle.sql
 ```
 
 运行 PostgreSQL 集成测试：
@@ -59,6 +60,7 @@ uv run --package eduadcrm-lead-lifecycle lead-lifecycle
 
 - control-plane: `http://localhost:8080`
 - ad-integration: `http://localhost:8081`
+- lead-lifecycle: `http://localhost:8090`
 - frontend-web: `http://localhost:5173`
 
 ## Redis 与 PGMQ
@@ -95,6 +97,20 @@ $env:PYTHONPATH="services\data-insight\src"
 uv run python -c "from data_insight.adapters import baidu, xiaohongshu; print(baidu.request_shape()); print(xiaohongshu.request_shape())"
 ```
 
+## 线索导入验收
+
+lead-lifecycle 支持创建导入批次、上传 CSV/XLSX、字段映射建议、手机号标准化哈希、团队内去重和错误报告。前端“线索导入”页面可直接使用示例 CSV 体验闭环，也可以直接调用：
+
+```powershell
+$env:UV_CACHE_DIR=".cache\uv"
+$env:PYTHONPATH="services\lead-lifecycle\src"
+uv run python -m unittest services/lead-lifecycle/src/lead_lifecycle/service_test.py
+uv run --package eduadcrm-lead-lifecycle lead-lifecycle
+curl.exe -X POST http://127.0.0.1:8090/api/leads/imports -H "Content-Type: application/json" -d "{\"tenant_id\":\"demo-tenant\",\"organization_id\":\"demo-org\",\"team_id\":\"demo-team\",\"channel_id\":\"demo-channel\"}"
+```
+
+当前开发期使用内存仓储；`003_lead_lifecycle.sql` 已定义 PostgreSQL 表结构，后续阶段接入持久化 repository。
+
 ## 当前已落地接口
 
 - `GET /api/config`
@@ -126,3 +142,10 @@ uv run python -c "from data_insight.adapters import baidu, xiaohongshu; print(ba
 - `GET /api/ad-sync/raw-reports`
 - `GET /api/platform-adapters`
 - `GET /api/platform-adapters/preview`
+- `GET /api/leads/imports`
+- `POST /api/leads/imports`
+- `POST /api/leads/imports/{batch_id}/upload`
+- `POST /api/leads/imports/{batch_id}/confirm`
+- `GET /api/leads`
+- `POST /api/leads`
+- `POST /api/leads/batch`

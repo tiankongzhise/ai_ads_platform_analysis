@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Button, Card, DatePicker, Form, Input, Layout, Menu, Select, Space, Table, Tabs, Tag, Tree, Typography, message } from 'antd';
-import { ApiOutlined, DashboardOutlined, LockOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
+import { ApiOutlined, DashboardOutlined, ImportOutlined, LockOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
 import { api } from './api/client';
 import './styles/app.css';
 
@@ -133,6 +133,45 @@ type SyncResult = {
   sdk_reference: string[];
 };
 
+type LeadImportError = {
+  row_number: number;
+  field: string;
+  message: string;
+  raw: Record<string, unknown>;
+};
+
+type LeadImportBatch = {
+  id: string;
+  tenant_id: string;
+  organization_id: string;
+  team_id: string;
+  channel_id: string;
+  status: string;
+  file_name: string;
+  total_rows: number;
+  success_rows: number;
+  failed_rows: number;
+  headers: string[];
+  mapping_suggestion: Record<string, string>;
+  preview_rows: Record<string, unknown>[];
+  errors: LeadImportError[];
+  created_at: string;
+  updated_at: string;
+};
+
+type Lead = {
+  id: string;
+  system_lead_no: string;
+  student_name: string;
+  phone_masked: string;
+  source_channel: string;
+  stage: string;
+  team_id: string;
+  channel_id: string;
+  reported_at: string;
+  raw: Record<string, unknown>;
+};
+
 const platformOptions = [
   { value: 'douyin', label: '抖音/巨量引擎' },
   { value: 'tencent', label: '腾讯广告' },
@@ -196,6 +235,7 @@ function App() {
             { key: 'auth', icon: <LockOutlined />, label: '用户鉴权' },
             { key: 'control', icon: <TeamOutlined />, label: '组织配置' },
             { key: 'oauth', icon: <ApiOutlined />, label: '广告授权' },
+            { key: 'leads', icon: <ImportOutlined />, label: '线索导入' },
             { key: 'overview', icon: <DashboardOutlined />, label: '平台概览' }
           ]}
         />
@@ -209,6 +249,7 @@ function App() {
           {active === 'auth' && <AuthPage />}
           {active === 'control' && <ControlPlanePage />}
           {active === 'oauth' && <OAuthPage />}
+          {active === 'leads' && <LeadImportPage />}
           {active === 'overview' && <OverviewPage />}
         </Content>
       </Layout>
@@ -644,6 +685,171 @@ function OAuthPage() {
             { title: '范围', render: (_, row) => `${row.date_from} 至 ${row.date_to}` },
             { title: '原因', dataIndex: 'reason' },
             { title: '创建时间', dataIndex: 'created_at' }
+          ]}
+        />
+      </Card>
+    </Space>
+  );
+}
+
+function LeadImportPage() {
+  const [batches, setBatches] = useState<LeadImportBatch[]>([]);
+  const [selectedBatch, setSelectedBatch] = useState<LeadImportBatch | null>(null);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [createForm] = Form.useForm();
+  const [uploadForm] = Form.useForm();
+
+  const load = async () => {
+    setBatches(await api<LeadImportBatch[]>('/api/leads/imports'));
+    setLeads(await api<Lead[]>('/api/leads?limit=80'));
+  };
+
+  useEffect(() => {
+    void load().catch(() => undefined);
+  }, []);
+
+  const refreshBatch = async (batchId: string) => {
+    const batch = await api<LeadImportBatch>(`/api/leads/imports/${batchId}`);
+    setSelectedBatch(batch);
+    setBatches((items) => [batch, ...items.filter((item) => item.id !== batch.id)]);
+    await load();
+  };
+
+  return (
+    <Space direction="vertical" size={16} className="page-stack">
+      <Typography.Title level={3}>线索导入</Typography.Title>
+      <Card title="创建导入批次">
+        <Form
+          form={createForm}
+          layout="inline"
+          initialValues={{
+            tenant_id: 'demo-tenant',
+            organization_id: 'demo-org',
+            team_id: 'demo-team',
+            channel_id: 'demo-channel'
+          }}
+          onFinish={async (values) => {
+            const batch = await api<LeadImportBatch>('/api/leads/imports', {
+              method: 'POST',
+              body: JSON.stringify(values)
+            });
+            setSelectedBatch(batch);
+            message.success('导入批次已创建');
+            await load();
+          }}
+        >
+          <Form.Item name="tenant_id" rules={[{ required: true }]}><Input placeholder="租户 ID" /></Form.Item>
+          <Form.Item name="organization_id" rules={[{ required: true }]}><Input placeholder="组织 ID" /></Form.Item>
+          <Form.Item name="team_id" rules={[{ required: true }]}><Input placeholder="团队 ID" /></Form.Item>
+          <Form.Item name="channel_id" rules={[{ required: true }]}><Input placeholder="渠道 ID" /></Form.Item>
+          <Button type="primary" htmlType="submit">创建批次</Button>
+        </Form>
+      </Card>
+      <Card title="上传 CSV">
+        <Form
+          form={uploadForm}
+          layout="vertical"
+          initialValues={{
+            filename: 'leads.csv',
+            content: '学生姓名,手机号,渠道,线索阶段\n张三,13800138000,抖音,new\n李四,13800138000,腾讯,new\n王五,13900139000,百度,visited'
+          }}
+          onFinish={async (values) => {
+            if (!selectedBatch) {
+              message.warning('请先创建或选择导入批次');
+              return;
+            }
+            const batch = await api<LeadImportBatch>(`/api/leads/imports/${selectedBatch.id}/upload`, {
+              method: 'POST',
+              body: JSON.stringify({ filename: values.filename, content: values.content })
+            });
+            setSelectedBatch(batch);
+            message.success(`上传完成，识别 ${batch.total_rows} 行`);
+            await load();
+          }}
+        >
+          <Form.Item name="filename" label="文件名" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="content" label="CSV 内容" rules={[{ required: true }]}>
+            <Input.TextArea rows={6} />
+          </Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit">上传并预览</Button>
+            <Button
+              onClick={async () => {
+                if (!selectedBatch) {
+                  message.warning('请先选择导入批次');
+                  return;
+                }
+                const batch = await api<LeadImportBatch>(`/api/leads/imports/${selectedBatch.id}/confirm`, {
+                  method: 'POST',
+                  body: JSON.stringify({ mapping: selectedBatch.mapping_suggestion })
+                });
+                setSelectedBatch(batch);
+                message.success(`导入完成：成功 ${batch.success_rows} 行，失败 ${batch.failed_rows} 行`);
+                await load();
+              }}
+            >
+              确认导入
+            </Button>
+          </Space>
+        </Form>
+      </Card>
+      <Card title="导入批次">
+        <Table
+          rowKey="id"
+          dataSource={batches}
+          pagination={{ pageSize: 6 }}
+          columns={[
+            { title: '批次 ID', dataIndex: 'id' },
+            { title: '团队', dataIndex: 'team_id' },
+            { title: '状态', dataIndex: 'status', render: (status) => <Tag color={status === 'success' ? 'green' : status === 'partial_success' ? 'orange' : 'blue'}>{status}</Tag> },
+            { title: '总行数', dataIndex: 'total_rows' },
+            { title: '成功', dataIndex: 'success_rows' },
+            { title: '失败', dataIndex: 'failed_rows' },
+            {
+              title: '操作',
+              render: (_, row) => <Button size="small" onClick={() => refreshBatch(row.id)}>查看</Button>
+            }
+          ]}
+        />
+      </Card>
+      {selectedBatch && (
+        <Card title="字段映射与错误报告">
+          <Space direction="vertical" className="page-stack">
+            <Typography.Text>当前批次：{selectedBatch.id}</Typography.Text>
+            <Typography.Text code>{JSON.stringify(selectedBatch.mapping_suggestion)}</Typography.Text>
+            <Table
+              rowKey={(_, index) => String(index)}
+              dataSource={selectedBatch.preview_rows || []}
+              pagination={false}
+              columns={(selectedBatch.headers || []).slice(0, 6).map((header) => ({ title: header, dataIndex: header }))}
+            />
+            <Table
+              rowKey={(row) => `${row.row_number}-${row.field}`}
+              dataSource={selectedBatch.errors || []}
+              pagination={false}
+              columns={[
+                { title: '行号', dataIndex: 'row_number' },
+                { title: '字段', dataIndex: 'field' },
+                { title: '错误', dataIndex: 'message' },
+                { title: '原始字段', render: (_, row) => <Typography.Text code>{Object.keys(row.raw || {}).join(', ')}</Typography.Text> }
+              ]}
+            />
+          </Space>
+        </Card>
+      )}
+      <Card title="线索列表">
+        <Table
+          rowKey="id"
+          dataSource={leads}
+          pagination={{ pageSize: 8 }}
+          columns={[
+            { title: '线索号', dataIndex: 'system_lead_no' },
+            { title: '姓名', dataIndex: 'student_name' },
+            { title: '手机号', dataIndex: 'phone_masked' },
+            { title: '来源', dataIndex: 'source_channel' },
+            { title: '阶段', dataIndex: 'stage', render: (stage) => <Tag>{stage}</Tag> },
+            { title: '团队', dataIndex: 'team_id' },
+            { title: '上报时间', dataIndex: 'reported_at' }
           ]}
         />
       </Card>

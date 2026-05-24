@@ -10,8 +10,8 @@ export default defineConfig({
       '/api/config': 'http://127.0.0.1:8080',
       '/api/oauth': 'http://127.0.0.1:8081',
       '/api/ad-accounts': 'http://127.0.0.1:8081',
-      '/api/ad-sync': 'http://127.0.0.1:8081'
+      '/api/ad-sync': 'http://127.0.0.1:8081',
+      '/api/leads': 'http://127.0.0.1:8090'
     }
   }
 });
-
