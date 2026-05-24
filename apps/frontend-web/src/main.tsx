@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Button, Card, Form, Input, Layout, Menu, Select, Space, Table, Tabs, Tag, Tree, Typography, message } from 'antd';
+import { Button, Card, DatePicker, Form, Input, Layout, Menu, Select, Space, Table, Tabs, Tag, Tree, Typography, message } from 'antd';
 import { ApiOutlined, DashboardOutlined, LockOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
 import { api } from './api/client';
 import './styles/app.css';
@@ -71,6 +71,66 @@ type Channel = {
   platform: string;
   display_name: string;
   status: string;
+};
+
+type AdAccount = {
+  id: string;
+  tenant_id: string;
+  platform: string;
+  external_account_id: string;
+  account_name: string;
+  status: string;
+  last_sync_status: string;
+};
+
+type SyncJob = {
+  id: string;
+  account_id: string;
+  platform: string;
+  report_type: string;
+  date_from: string;
+  date_to: string;
+  status: string;
+  reason: string;
+  created_at: string;
+  finished_at?: string;
+  result_meta?: Record<string, unknown>;
+};
+
+type AdEntity = {
+  id: string;
+  account_id: string;
+  platform: string;
+  entity_type: string;
+  external_id: string;
+  parent_external_id?: string;
+  name: string;
+  status: string;
+  synced_at: string;
+  raw: Record<string, unknown>;
+};
+
+type RawReportRow = {
+  id: string;
+  account_id: string;
+  platform: string;
+  report_type: string;
+  granularity: string;
+  stat_date: string;
+  stat_hour?: string;
+  entity_type: string;
+  external_entity_id: string;
+  metrics: { cost: number; impressions: number; clicks: number; conversions: number };
+  raw: Record<string, unknown>;
+};
+
+type SyncResult = {
+  job: SyncJob;
+  entity_count: number;
+  report_rows: number;
+  report_types: string[];
+  client_mode: string;
+  sdk_reference: string[];
 };
 
 function App() {
@@ -372,6 +432,25 @@ function AuthPage() {
 function OAuthPage() {
   const [platform, setPlatform] = useState('douyin');
   const [authUrl, setAuthUrl] = useState('');
+  const [accounts, setAccounts] = useState<AdAccount[]>([]);
+  const [jobs, setJobs] = useState<SyncJob[]>([]);
+  const [entities, setEntities] = useState<AdEntity[]>([]);
+  const [reports, setReports] = useState<RawReportRow[]>([]);
+  const [lastResult, setLastResult] = useState<SyncResult | null>(null);
+
+  const loadSyncData = async () => {
+    const query = `platform=${platform}`;
+    setAccounts(await api<AdAccount[]>('/api/ad-accounts'));
+    setJobs(await api<SyncJob[]>('/api/ad-sync/jobs'));
+    setEntities(await api<AdEntity[]>(`/api/ad-sync/entities?${query}&limit=40`));
+    setReports(await api<RawReportRow[]>(`/api/ad-sync/raw-reports?${query}&limit=40`));
+  };
+
+  useEffect(() => {
+    void loadSyncData().catch(() => undefined);
+  }, [platform]);
+
+  const selectedAccount = accounts.find((account) => account.platform === platform);
 
   return (
     <Space direction="vertical" size={16} className="page-stack">
@@ -408,6 +487,123 @@ function OAuthPage() {
           <Typography.Paragraph copyable>{authUrl}</Typography.Paragraph>
         </Card>
       )}
+      <Card title="抖音/腾讯 P0 同步">
+        <Form
+          layout="inline"
+          onFinish={async (values) => {
+            const range = values.range || [];
+            const resp = await api<SyncResult>('/api/ad-sync/run', {
+              method: 'POST',
+              body: JSON.stringify({
+                platform,
+                account_id: values.account_id,
+                report_types: values.report_types,
+                date_from: range[0]?.format('YYYY-MM-DD'),
+                date_to: range[1]?.format('YYYY-MM-DD'),
+                reason: 'frontend_manual_sync'
+              })
+            });
+            setLastResult(resp);
+            message.success(`同步完成：${resp.entity_count} 个实体，${resp.report_rows} 行报表`);
+            await loadSyncData();
+          }}
+        >
+          <Form.Item name="account_id">
+            <Select
+              allowClear
+              placeholder="选择账户，可空"
+              style={{ width: 260 }}
+              options={accounts
+                .filter((account) => account.platform === platform)
+                .map((account) => ({ value: account.id, label: `${account.account_name} / ${account.external_account_id}` }))}
+            />
+          </Form.Item>
+          <Form.Item name="report_types" initialValue={['account_daily', 'campaign_daily', 'adgroup_daily', 'account_hourly']}>
+            <Select
+              mode="multiple"
+              style={{ width: 420 }}
+              options={[
+                { value: 'account_daily', label: '账户日报' },
+                { value: 'campaign_daily', label: '计划日报' },
+                { value: 'adgroup_daily', label: '单元日报' },
+                { value: 'account_hourly', label: '账户小时报' }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="range">
+            <DatePicker.RangePicker />
+          </Form.Item>
+          <Button type="primary" htmlType="submit">运行同步</Button>
+          <Button onClick={loadSyncData}>刷新</Button>
+        </Form>
+        {lastResult && (
+          <div className="sync-result">
+            <Tag color="green">{lastResult.job.status}</Tag>
+            <Typography.Text>实体 {lastResult.entity_count} 个，原始报表 {lastResult.report_rows} 行</Typography.Text>
+            <Typography.Text type="secondary">SDK 参考：{lastResult.sdk_reference.join(' / ')}</Typography.Text>
+          </div>
+        )}
+      </Card>
+      <Card title="广告账户">
+        <Table
+          rowKey="id"
+          dataSource={accounts.filter((account) => account.platform === platform)}
+          pagination={false}
+          columns={[
+            { title: '账户名', dataIndex: 'account_name' },
+            { title: '平台账户 ID', dataIndex: 'external_account_id' },
+            { title: '状态', dataIndex: 'status', render: (status) => <Tag color="green">{status}</Tag> },
+            { title: '同步状态', dataIndex: 'last_sync_status', render: (status) => <Tag>{status || 'pending'}</Tag> }
+          ]}
+        />
+        {!selectedAccount && <Typography.Text type="secondary">未选择真实账户时，运行同步会自动生成当前平台演示账户。</Typography.Text>}
+      </Card>
+      <Card title="账户/计划/单元快照">
+        <Table
+          rowKey="id"
+          dataSource={entities}
+          pagination={{ pageSize: 8 }}
+          columns={[
+            { title: '类型', dataIndex: 'entity_type', render: (value) => <Tag>{value}</Tag> },
+            { title: '外部 ID', dataIndex: 'external_id' },
+            { title: '父级 ID', dataIndex: 'parent_external_id' },
+            { title: '名称', dataIndex: 'name' },
+            { title: '状态', dataIndex: 'status' },
+            { title: '原始字段', render: (_, row) => <Typography.Text code>{Object.keys(row.raw || {}).slice(0, 4).join(', ')}</Typography.Text> }
+          ]}
+        />
+      </Card>
+      <Card title="原始日报/小时报">
+        <Table
+          rowKey="id"
+          dataSource={reports}
+          pagination={{ pageSize: 8 }}
+          columns={[
+            { title: '报表', dataIndex: 'report_type' },
+            { title: '日期', render: (_, row) => row.stat_hour ? `${row.stat_date} ${row.stat_hour}:00` : row.stat_date },
+            { title: '实体', dataIndex: 'external_entity_id' },
+            { title: '消耗', render: (_, row) => row.metrics.cost.toFixed(2) },
+            { title: '曝光', render: (_, row) => row.metrics.impressions },
+            { title: '点击', render: (_, row) => row.metrics.clicks },
+            { title: '转化', render: (_, row) => row.metrics.conversions },
+            { title: 'raw', render: (_, row) => <Typography.Text code>{Object.keys(row.raw || {}).slice(0, 5).join(', ')}</Typography.Text> }
+          ]}
+        />
+      </Card>
+      <Card title="同步任务">
+        <Table
+          rowKey="id"
+          dataSource={jobs.filter((job) => job.platform === platform)}
+          pagination={{ pageSize: 6 }}
+          columns={[
+            { title: '任务 ID', dataIndex: 'id' },
+            { title: '状态', dataIndex: 'status', render: (status) => <Tag color={status === 'success' ? 'green' : 'blue'}>{status}</Tag> },
+            { title: '范围', render: (_, row) => `${row.date_from} 至 ${row.date_to}` },
+            { title: '原因', dataIndex: 'reason' },
+            { title: '创建时间', dataIndex: 'created_at' }
+          ]}
+        />
+      </Card>
     </Space>
   );
 }

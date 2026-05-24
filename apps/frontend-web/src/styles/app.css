@@ -48,3 +48,10 @@ body {
   min-width: 320px;
 }
 
+.sync-result {
+  margin-top: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}

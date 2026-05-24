@@ -73,6 +73,18 @@ $env:DATABASE_URL="postgres://eduadcrm:eduadcrm@127.0.0.1:5432/eduadcrm?sslmode=
 go run ./services/ad-integration/cmd/ad-integration
 ```
 
+## 抖音与腾讯同步验收
+
+开发环境没有真实平台密钥时，ad-integration 会使用本地 SDK 字段形态客户端生成确定性演示数据。可在前端“广告授权”页面选择抖音或腾讯并点击“运行同步”，也可以直接调用：
+
+```powershell
+curl.exe -X POST http://127.0.0.1:8081/api/ad-sync/run -H "Content-Type: application/json" -d "{\"platform\":\"douyin\",\"date_from\":\"2026-05-20\",\"date_to\":\"2026-05-20\"}"
+curl.exe http://127.0.0.1:8081/api/ad-sync/entities?platform=douyin
+curl.exe http://127.0.0.1:8081/api/ad-sync/raw-reports?platform=douyin
+```
+
+设置 `DATABASE_URL` 后，账户引用、同步任务、账户/计划/单元快照和原始日报/小时报会写入 `ad_sync` schema。
+
 ## 当前已落地接口
 
 - `GET /api/config`
@@ -98,4 +110,7 @@ go run ./services/ad-integration/cmd/ad-integration
 - `POST /api/oauth/{platform}/authorize`
 - `GET /api/oauth/{platform}/callback`
 - `GET /api/ad-accounts`
+- `POST /api/ad-sync/run`
 - `GET /api/ad-sync/jobs`
+- `GET /api/ad-sync/entities`
+- `GET /api/ad-sync/raw-reports`
