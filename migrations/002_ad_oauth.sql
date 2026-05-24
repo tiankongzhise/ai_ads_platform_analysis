@@ -63,6 +63,45 @@ CREATE TABLE IF NOT EXISTS ad_sync.ad_sync_jobs (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS ad_sync.ad_entities (
+  id uuid PRIMARY KEY,
+  tenant_id uuid NOT NULL,
+  account_id uuid NOT NULL,
+  platform text NOT NULL,
+  entity_type text NOT NULL CHECK (entity_type IN ('account', 'campaign', 'adgroup', 'ad')),
+  external_id text NOT NULL,
+  parent_external_id text,
+  name text,
+  status text,
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb,
+  synced_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (account_id, platform, entity_type, external_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ad_entities_account_type ON ad_sync.ad_entities(account_id, entity_type);
+
+CREATE TABLE IF NOT EXISTS ad_sync.ad_raw_report_rows (
+  id uuid PRIMARY KEY,
+  tenant_id uuid NOT NULL,
+  account_id uuid NOT NULL,
+  platform text NOT NULL,
+  report_type text NOT NULL,
+  granularity text NOT NULL CHECK (granularity IN ('day', 'hour')),
+  stat_date date NOT NULL,
+  stat_hour text,
+  entity_type text NOT NULL,
+  external_entity_id text NOT NULL,
+  metrics jsonb NOT NULL DEFAULT '{}'::jsonb,
+  raw jsonb NOT NULL DEFAULT '{}'::jsonb,
+  synced_at timestamptz NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (account_id, report_type, stat_date, stat_hour, external_entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ad_raw_reports_account_type_date ON ad_sync.ad_raw_report_rows(account_id, report_type, stat_date DESC);
+
 CREATE TABLE IF NOT EXISTS ad_sync.pgmq_messages (
   id bigserial PRIMARY KEY,
   queue_name text NOT NULL,

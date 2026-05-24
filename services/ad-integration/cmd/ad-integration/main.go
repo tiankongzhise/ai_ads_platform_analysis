@@ -11,18 +11,27 @@ import (
 
 func main() {
 	repository := store.Repository(store.NewMemoryStore())
-	if redisAddr := getenv("REDIS_ADDR", ""); redisAddr != "" {
-		repository = store.NewStateRepository(repository, store.NewRedisStateStore(redisAddr))
-	}
 	var queue store.MessageQueue
 	var cleanup func() = func() {}
 	if databaseURL := getenv("DATABASE_URL", ""); databaseURL != "" {
+		postgresStore, err := store.NewPostgresStore(databaseURL)
+		if err != nil {
+			log.Fatalf("create postgres store: %v", err)
+		}
+		repository = postgresStore
 		postgresQueue, err := store.NewPostgresQueue(databaseURL)
 		if err != nil {
+			_ = postgresStore.Close()
 			log.Fatalf("create postgres queue: %v", err)
 		}
 		queue = postgresQueue
-		cleanup = func() { _ = postgresQueue.Close() }
+		cleanup = func() {
+			_ = postgresQueue.Close()
+			_ = postgresStore.Close()
+		}
+	}
+	if redisAddr := getenv("REDIS_ADDR", ""); redisAddr != "" {
+		repository = store.NewStateRepository(repository, store.NewRedisStateStore(redisAddr))
 	}
 	defer cleanup()
 	server := app.NewServerWithStoreAndQueue(repository, queue)
