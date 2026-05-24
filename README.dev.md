@@ -34,6 +34,7 @@ psql $env:DATABASE_URL -f migrations/001_core_config_auth.sql
 psql $env:DATABASE_URL -f migrations/002_ad_oauth.sql
 psql $env:DATABASE_URL -f migrations/003_lead_lifecycle.sql
 psql $env:DATABASE_URL -f migrations/004_lead_conflict_attribution.sql
+psql $env:DATABASE_URL -f migrations/005_etl_facts.sql
 ```
 
 运行 PostgreSQL 集成测试：
@@ -62,6 +63,7 @@ uv run --package eduadcrm-lead-lifecycle lead-lifecycle
 - control-plane: `http://localhost:8080`
 - ad-integration: `http://localhost:8081`
 - lead-lifecycle: `http://localhost:8090`
+- data-insight: `http://localhost:8091`
 - frontend-web: `http://localhost:5173`
 
 ## Redis 与 PGMQ
@@ -122,6 +124,19 @@ curl.exe -X POST http://127.0.0.1:8090/api/conflicts/{group_id}/resolve -H "Cont
 curl.exe http://127.0.0.1:8090/api/attributions/rules
 ```
 
+## ETL 与小时聚合验收
+
+data-insight 支持将广告原始报表和线索数据标准化为 `fact_ad_daily`、`fact_lead_daily` 和 `fact_hourly_aggregate`。前端“ETL 聚合”页面可触发演示 ETL，也可以直接调用：
+
+```powershell
+$env:UV_CACHE_DIR=".cache\uv"
+$env:PYTHONPATH="services\data-insight\src"
+uv run python -m unittest services/data-insight/src/data_insight/etl_test.py
+uv run --package eduadcrm-data-insight data-insight
+curl.exe -X POST http://127.0.0.1:8091/api/etl/run -H "Content-Type: application/json" -d "{}"
+curl.exe http://127.0.0.1:8091/api/etl/facts/hourly
+```
+
 ## 当前已落地接口
 
 - `GET /api/config`
@@ -166,3 +181,8 @@ curl.exe http://127.0.0.1:8090/api/attributions/rules
 - `GET /api/attributions/rules`
 - `GET /api/attributions`
 - `POST /api/attributions/calculate`
+- `POST /api/etl/run`
+- `GET /api/etl/batches`
+- `GET /api/etl/facts/ad-daily`
+- `GET /api/etl/facts/lead-daily`
+- `GET /api/etl/facts/hourly`

@@ -194,6 +194,55 @@ type ConflictGroup = {
   resolved_at?: string;
 };
 
+type ETLBatch = {
+  id: string;
+  status: string;
+  source: string;
+  input_rows: number;
+  fact_ad_daily_rows: number;
+  fact_lead_daily_rows: number;
+  hourly_rows: number;
+  rule_version: string;
+  metric_version: string;
+  created_at: string;
+};
+
+type FactAdDaily = {
+  tenant_id: string;
+  report_date: string;
+  platform: string;
+  account_id: string;
+  entity_type: string;
+  external_entity_id: string;
+  spend: number;
+  impressions: number;
+  clicks: number;
+  conversions: number;
+};
+
+type FactLeadDaily = {
+  tenant_id: string;
+  report_date: string;
+  organization_id: string;
+  team_id: string;
+  channel_text: string;
+  leads_count: number;
+  valid_leads_count: number;
+  visit_count: number;
+  enroll_count: number;
+  conflict_count: number;
+};
+
+type FactHourlyAggregate = {
+  tenant_id: string;
+  hour_start: string;
+  organization_id: string;
+  team_id: string;
+  platform: string;
+  channel_id: string;
+  metrics: Record<string, number>;
+};
+
 const platformOptions = [
   { value: 'douyin', label: '抖音/巨量引擎' },
   { value: 'tencent', label: '腾讯广告' },
@@ -259,6 +308,7 @@ function App() {
             { key: 'oauth', icon: <ApiOutlined />, label: '广告授权' },
             { key: 'leads', icon: <ImportOutlined />, label: '线索导入' },
             { key: 'conflicts', icon: <TeamOutlined />, label: '线索冲突' },
+            { key: 'etl', icon: <DashboardOutlined />, label: 'ETL 聚合' },
             { key: 'overview', icon: <DashboardOutlined />, label: '平台概览' }
           ]}
         />
@@ -274,6 +324,7 @@ function App() {
           {active === 'oauth' && <OAuthPage />}
           {active === 'leads' && <LeadImportPage />}
           {active === 'conflicts' && <ConflictPage />}
+          {active === 'etl' && <ETLPage />}
           {active === 'overview' && <OverviewPage />}
         </Content>
       </Layout>
@@ -970,6 +1021,108 @@ function ConflictPage() {
           </Space>
         </Card>
       )}
+    </Space>
+  );
+}
+
+function ETLPage() {
+  const [batches, setBatches] = useState<ETLBatch[]>([]);
+  const [adFacts, setAdFacts] = useState<FactAdDaily[]>([]);
+  const [leadFacts, setLeadFacts] = useState<FactLeadDaily[]>([]);
+  const [hourlyFacts, setHourlyFacts] = useState<FactHourlyAggregate[]>([]);
+
+  const load = async () => {
+    setBatches(await api<ETLBatch[]>('/api/etl/batches'));
+    setAdFacts(await api<FactAdDaily[]>('/api/etl/facts/ad-daily'));
+    setLeadFacts(await api<FactLeadDaily[]>('/api/etl/facts/lead-daily'));
+    setHourlyFacts(await api<FactHourlyAggregate[]>('/api/etl/facts/hourly'));
+  };
+
+  useEffect(() => {
+    void load().catch(() => undefined);
+  }, []);
+
+  return (
+    <Space direction="vertical" size={16} className="page-stack">
+      <Typography.Title level={3}>ETL 聚合</Typography.Title>
+      <Card title="批次操作">
+        <Space>
+          <Button
+            type="primary"
+            onClick={async () => {
+              await api('/api/etl/run', { method: 'POST', body: JSON.stringify({}) });
+              message.success('ETL 批次已完成');
+              await load();
+            }}
+          >
+            运行演示 ETL
+          </Button>
+          <Button onClick={load}>刷新</Button>
+        </Space>
+      </Card>
+      <Card title="ETL 批次">
+        <Table
+          rowKey="id"
+          dataSource={batches}
+          pagination={false}
+          columns={[
+            { title: '批次 ID', dataIndex: 'id' },
+            { title: '状态', dataIndex: 'status', render: (status) => <Tag color={status === 'success' ? 'green' : 'blue'}>{status}</Tag> },
+            { title: '输入行', dataIndex: 'input_rows' },
+            { title: '广告事实', dataIndex: 'fact_ad_daily_rows' },
+            { title: '线索事实', dataIndex: 'fact_lead_daily_rows' },
+            { title: '小时聚合', dataIndex: 'hourly_rows' },
+            { title: '指标版本', dataIndex: 'metric_version' }
+          ]}
+        />
+      </Card>
+      <Card title="广告日事实">
+        <Table
+          rowKey={(row) => `${row.report_date}-${row.platform}-${row.external_entity_id}`}
+          dataSource={adFacts}
+          pagination={{ pageSize: 6 }}
+          columns={[
+            { title: '日期', dataIndex: 'report_date' },
+            { title: '平台', dataIndex: 'platform' },
+            { title: '实体', dataIndex: 'external_entity_id' },
+            { title: '消耗', render: (_, row) => row.spend.toFixed(2) },
+            { title: '曝光', dataIndex: 'impressions' },
+            { title: '点击', dataIndex: 'clicks' },
+            { title: '转化', dataIndex: 'conversions' }
+          ]}
+        />
+      </Card>
+      <Card title="线索日事实">
+        <Table
+          rowKey={(row) => `${row.report_date}-${row.team_id}-${row.channel_text}`}
+          dataSource={leadFacts}
+          pagination={{ pageSize: 6 }}
+          columns={[
+            { title: '日期', dataIndex: 'report_date' },
+            { title: '团队', dataIndex: 'team_id' },
+            { title: '渠道', dataIndex: 'channel_text' },
+            { title: '线索数', dataIndex: 'leads_count' },
+            { title: '有效', dataIndex: 'valid_leads_count' },
+            { title: '到校', dataIndex: 'visit_count' },
+            { title: '报名', dataIndex: 'enroll_count' },
+            { title: '冲突', dataIndex: 'conflict_count' }
+          ]}
+        />
+      </Card>
+      <Card title="小时聚合">
+        <Table
+          rowKey={(row) => `${row.hour_start}-${row.platform}-${row.team_id}-${row.channel_id}`}
+          dataSource={hourlyFacts}
+          pagination={{ pageSize: 8 }}
+          columns={[
+            { title: '小时', dataIndex: 'hour_start' },
+            { title: '平台', dataIndex: 'platform' },
+            { title: '团队', dataIndex: 'team_id' },
+            { title: '渠道', dataIndex: 'channel_id' },
+            { title: '指标', render: (_, row) => <Typography.Text code>{JSON.stringify(row.metrics)}</Typography.Text> }
+          ]}
+        />
+      </Card>
     </Space>
   );
 }
