@@ -6,16 +6,19 @@ from urllib.parse import parse_qs, urlparse
 
 try:
     from data_insight.adapters import baidu, xiaohongshu
+    from data_insight.bi_config import BIConfigService
     from data_insight.bi import BIService
     from data_insight.etl import ETLService
 except ModuleNotFoundError:
     from adapters import baidu, xiaohongshu
+    from bi_config import BIConfigService
     from bi import BIService
     from etl import ETLService
 
 
 etl_service = ETLService()
 bi_service = BIService(etl_service)
+bi_config_service = BIConfigService()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -77,6 +80,26 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/analytics/hourly-trend":
             self._json({"success": True, "data": bi_service.hourly_trend()})
             return
+        if parsed.path == "/api/bi/catalog/metrics":
+            self._json({"success": True, "data": bi_config_service.metrics()})
+            return
+        if parsed.path == "/api/bi/catalog/dimensions":
+            self._json({"success": True, "data": bi_config_service.dimensions()})
+            return
+        if parsed.path == "/api/bi/catalog/datasets":
+            self._json({"success": True, "data": bi_config_service.datasets()})
+            return
+        if parsed.path == "/api/bi/catalog/charts":
+            self._json({"success": True, "data": bi_config_service.charts()})
+            return
+        if parsed.path == "/api/bi/dashboards":
+            params = parse_qs(parsed.query)
+            self._json({"success": True, "data": bi_config_service.list_dashboards(params.get("tenant_id", [""])[0])})
+            return
+        if parsed.path == "/api/bi/extensions":
+            params = parse_qs(parsed.query)
+            self._json({"success": True, "data": bi_config_service.list_extensions(params.get("tenant_id", [""])[0])})
+            return
         self.send_error(404)
 
     def do_POST(self) -> None:
@@ -86,6 +109,41 @@ class Handler(BaseHTTPRequestHandler):
             batch = etl_service.run(payload.get("ad_rows"), payload.get("lead_rows"))
             self._json({"success": True, "data": {"batch": batch.to_dict(), "facts": etl_service.latest()}})
             return
+        if parsed.path == "/api/bi/dashboards":
+            dashboard = bi_config_service.create_dashboard(self._read_json())
+            self._json({"success": True, "data": dashboard})
+            return
+        if parsed.path.startswith("/api/bi/dashboards/"):
+            dashboard_id = parsed.path.removeprefix("/api/bi/dashboards/").strip("/")
+            try:
+                dashboard = bi_config_service.update_dashboard(dashboard_id, self._read_json())
+            except KeyError:
+                self._json({"success": False, "error": {"message": "dashboard not found"}})
+                return
+            self._json({"success": True, "data": dashboard})
+            return
+        if parsed.path.startswith("/api/bi/extensions/"):
+            parts = parsed.path.strip("/").split("/")
+            if len(parts) == 5 and parts[0:2] == ["api", "bi"] and parts[2] == "extensions":
+                extension_code = parts[3]
+                action = parts[4]
+                payload = self._read_json()
+                tenant_id = payload.get("tenant_id", "demo-tenant")
+                try:
+                    if action == "enable":
+                        state = bi_config_service.enable_extension(tenant_id, extension_code, payload.get("manifest"))
+                    elif action == "disable":
+                        state = bi_config_service.disable_extension(tenant_id, extension_code)
+                    elif action == "rollback":
+                        state = bi_config_service.rollback_extension(tenant_id, extension_code)
+                    else:
+                        self.send_error(404)
+                        return
+                except KeyError:
+                    self._json({"success": False, "error": {"message": "extension not found"}})
+                    return
+                self._json({"success": True, "data": state})
+                return
         self.send_error(404)
 
     def _read_json(self) -> dict:
