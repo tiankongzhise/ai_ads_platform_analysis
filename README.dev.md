@@ -12,6 +12,15 @@ go run ./services/ad-integration/cmd/ad-integration
 npm.cmd --prefix apps/frontend-web run dev
 ```
 
+发布前全量门禁：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/release-gate.ps1
+powershell -ExecutionPolicy Bypass -File scripts/release-gate.ps1 -Http
+```
+
+`-Http` 模式需要 8080、8081、8090、8091、8092 五个后端服务已启动。详细发布、备份和回滚流程见 `docs/13-release-runbook.md`。
+
 默认 control-plane 使用内存存储。切换到 PostgreSQL：
 
 ```powershell
