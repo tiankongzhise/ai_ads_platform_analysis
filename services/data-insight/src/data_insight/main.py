@@ -9,16 +9,19 @@ try:
     from data_insight.bi_config import BIConfigService
     from data_insight.bi import BIService
     from data_insight.etl import ETLService
+    from data_insight.reports import ReportService
 except ModuleNotFoundError:
     from adapters import baidu, xiaohongshu
     from bi_config import BIConfigService
     from bi import BIService
     from etl import ETLService
+    from reports import ReportService
 
 
 etl_service = ETLService()
 bi_service = BIService(etl_service)
 bi_config_service = BIConfigService()
+report_service = ReportService(bi_service)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -100,6 +103,36 @@ class Handler(BaseHTTPRequestHandler):
             params = parse_qs(parsed.query)
             self._json({"success": True, "data": bi_config_service.list_extensions(params.get("tenant_id", [""])[0])})
             return
+        if parsed.path == "/api/reports/advice":
+            self._json({"success": True, "data": report_service.action_advice()})
+            return
+        if parsed.path == "/api/reports/consistency":
+            self._json({"success": True, "data": report_service.consistency()})
+            return
+        if parsed.path == "/api/reports":
+            params = parse_qs(parsed.query)
+            self._json({"success": True, "data": report_service.list_tasks(params.get("tenant_id", [""])[0])})
+            return
+        if parsed.path.startswith("/api/reports/") and parsed.path.endswith("/download"):
+            report_id = parsed.path.removeprefix("/api/reports/").removesuffix("/download").strip("/")
+            params = parse_qs(parsed.query)
+            try:
+                filename, content_type, body = report_service.download_file(report_id, params.get("token", [""])[0])
+            except KeyError:
+                self._json({"success": False, "error": {"message": "report not found"}})
+                return
+            except PermissionError:
+                self._json({"success": False, "error": {"message": "invalid download token"}})
+                return
+            self._file(filename, content_type, body)
+            return
+        if parsed.path.startswith("/api/reports/"):
+            report_id = parsed.path.removeprefix("/api/reports/").strip("/")
+            try:
+                self._json({"success": True, "data": report_service.get_task(report_id)})
+            except KeyError:
+                self._json({"success": False, "error": {"message": "report not found"}})
+            return
         self.send_error(404)
 
     def do_POST(self) -> None:
@@ -112,6 +145,14 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/bi/dashboards":
             dashboard = bi_config_service.create_dashboard(self._read_json())
             self._json({"success": True, "data": dashboard})
+            return
+        if parsed.path == "/api/reports":
+            try:
+                task = report_service.create_task(self._read_json())
+            except ValueError as exc:
+                self._json({"success": False, "error": {"message": str(exc)}})
+                return
+            self._json({"success": True, "data": task})
             return
         if parsed.path.startswith("/api/bi/dashboards/"):
             dashboard_id = parsed.path.removeprefix("/api/bi/dashboards/").strip("/")
@@ -156,6 +197,14 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _file(self, filename: str, content_type: str, body: bytes) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
