@@ -63,3 +63,16 @@ CREATE TABLE IF NOT EXISTS ad_sync.ad_sync_jobs (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS ad_sync.pgmq_messages (
+  id bigserial PRIMARY KEY,
+  queue_name text NOT NULL,
+  message_id uuid NOT NULL UNIQUE,
+  payload jsonb NOT NULL,
+  status text NOT NULL CHECK (status IN ('ready', 'processing', 'done', 'failed')),
+  retry_count int NOT NULL DEFAULT 0,
+  next_visible_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ad_sync_pgmq_ready ON ad_sync.pgmq_messages(queue_name, status, next_visible_at);

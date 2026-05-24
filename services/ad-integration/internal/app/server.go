@@ -10,7 +10,7 @@ import (
 )
 
 type Server struct {
-	store *store.MemoryStore
+	store store.Repository
 	oauth *oauth.Service
 }
 
@@ -28,7 +28,15 @@ type errorBody struct {
 
 func NewServer() *Server {
 	memory := store.NewMemoryStore()
-	return &Server{store: memory, oauth: oauth.NewService(memory)}
+	return NewServerWithStore(memory)
+}
+
+func NewServerWithStore(repository store.Repository) *Server {
+	return &Server{store: repository, oauth: oauth.NewService(repository)}
+}
+
+func NewServerWithStoreAndQueue(repository store.Repository, queue store.MessageQueue) *Server {
+	return &Server{store: repository, oauth: oauth.NewServiceWithQueue(repository, queue)}
 }
 
 func (s *Server) Router() http.Handler {

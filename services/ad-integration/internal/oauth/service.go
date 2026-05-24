@@ -14,7 +14,8 @@ import (
 )
 
 type Service struct {
-	store *store.MemoryStore
+	store store.Repository
+	queue store.MessageQueue
 }
 
 type AuthorizeRequest struct {
@@ -37,8 +38,12 @@ type CallbackResult struct {
 	Job     store.SyncJob `json:"sync_job"`
 }
 
-func NewService(memory *store.MemoryStore) *Service {
-	return &Service{store: memory}
+func NewService(repository store.Repository) *Service {
+	return &Service{store: repository}
+}
+
+func NewServiceWithQueue(repository store.Repository, queue store.MessageQueue) *Service {
+	return &Service{store: repository, queue: queue}
 }
 
 func (s *Service) Authorize(platform string, req AuthorizeRequest) (AuthorizeResponse, error) {
@@ -126,6 +131,25 @@ func (s *Service) Callback(platform string, query url.Values) (CallbackResult, e
 		CreatedAt:  time.Now().UTC(),
 	}
 	s.store.SaveSyncJob(job)
+	if s.queue != nil {
+		_ = s.queue.Publish("ad_sync_queue", store.QueueMessage{
+			MessageID:     job.ID,
+			SchemaVersion: "1.0",
+			EventType:     "ad.sync.requested",
+			TenantID:      job.TenantID,
+			TraceID:       "oauth_callback",
+			OccurredAt:    job.CreatedAt,
+			Producer:      "ad-integration-service",
+			Payload: map[string]any{
+				"account_id":   job.AccountID,
+				"platform":     job.Platform,
+				"report_types": []string{job.ReportType},
+				"date_from":    job.DateFrom,
+				"date_to":      job.DateTo,
+				"reason":       job.Reason,
+			},
+		})
+	}
 	return CallbackResult{Account: account, Job: job}, nil
 }
 

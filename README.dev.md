@@ -20,6 +20,13 @@ $env:DATABASE_URL="postgres://eduadcrm:eduadcrm@127.0.0.1:5432/eduadcrm?sslmode=
 go run ./services/control-plane/cmd/control-plane
 ```
 
+启用 Redis access token 黑名单：
+
+```powershell
+$env:REDIS_ADDR="127.0.0.1:6379"
+go run ./services/control-plane/cmd/control-plane
+```
+
 执行迁移：
 
 ```powershell
@@ -53,6 +60,18 @@ uv run --package eduadcrm-lead-lifecycle lead-lifecycle
 - control-plane: `http://localhost:8080`
 - ad-integration: `http://localhost:8081`
 - frontend-web: `http://localhost:5173`
+
+## Redis 与 PGMQ
+
+ad-integration 设置 `REDIS_ADDR` 后，OAuth state 会写入 Redis，并在回调时通过 `GETDEL` 原子消费，避免服务重启丢失 state 或并发重放。
+
+设置 `DATABASE_URL` 后，OAuth 回调创建的 `ad.sync.requested` 会写入 `ad_sync.pgmq_messages`：
+
+```powershell
+$env:REDIS_ADDR="127.0.0.1:6379"
+$env:DATABASE_URL="postgres://eduadcrm:eduadcrm@127.0.0.1:5432/eduadcrm?sslmode=disable"
+go run ./services/ad-integration/cmd/ad-integration
+```
 
 ## 当前已落地接口
 

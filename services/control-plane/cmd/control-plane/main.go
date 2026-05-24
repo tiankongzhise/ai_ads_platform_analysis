@@ -35,18 +35,27 @@ func main() {
 }
 
 func newServer(manager *config.Manager) (*app.Server, func(), error) {
+	var repository store.Repository
+	var cleanup func()
 	if getenv("CONTROL_PLANE_STORE", "memory") != "postgres" {
-		return app.NewServer(manager), func() {}, nil
+		repository = store.NewMemoryStore()
+		cleanup = func() {}
+	} else {
+		databaseURL := getenv("DATABASE_URL", "")
+		if databaseURL == "" {
+			return nil, nil, os.ErrInvalid
+		}
+		postgresStore, err := store.NewPostgresStore(context.Background(), databaseURL)
+		if err != nil {
+			return nil, nil, err
+		}
+		repository = postgresStore
+		cleanup = postgresStore.Close
 	}
-	databaseURL := getenv("DATABASE_URL", "")
-	if databaseURL == "" {
-		return nil, nil, os.ErrInvalid
+	if redisAddr := getenv("REDIS_ADDR", ""); redisAddr != "" {
+		repository = store.NewBlacklistRepository(repository, store.NewRedisBlacklist(redisAddr))
 	}
-	postgresStore, err := store.NewPostgresStore(context.Background(), databaseURL)
-	if err != nil {
-		return nil, nil, err
-	}
-	return app.NewServerWithStore(manager, postgresStore), postgresStore.Close, nil
+	return app.NewServerWithStore(manager, repository), cleanup, nil
 }
 
 func getenv(key string, fallback string) string {
