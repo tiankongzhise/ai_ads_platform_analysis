@@ -133,6 +133,53 @@ type SyncResult = {
   sdk_reference: string[];
 };
 
+const platformOptions = [
+  { value: 'douyin', label: '抖音/巨量引擎' },
+  { value: 'tencent', label: '腾讯广告' },
+  { value: 'baidu', label: '百度营销' },
+  { value: 'xiaohongshu', label: '小红书聚光' }
+];
+
+const reportTypeOptionsByPlatform: Record<string, { value: string; label: string }[]> = {
+  douyin: [
+    { value: 'account_daily', label: '账户日报' },
+    { value: 'campaign_daily', label: '计划日报' },
+    { value: 'adgroup_daily', label: '单元日报' },
+    { value: 'account_hourly', label: '账户小时报' }
+  ],
+  tencent: [
+    { value: 'account_daily', label: '账户日报' },
+    { value: 'campaign_daily', label: '计划日报' },
+    { value: 'adgroup_daily', label: '单元日报' },
+    { value: 'account_hourly', label: '账户小时报' }
+  ],
+  baidu: [
+    { value: 'account_daily', label: '账户日报' },
+    { value: 'campaign_daily', label: '计划日报' },
+    { value: 'adgroup_daily', label: '单元日报' }
+  ],
+  xiaohongshu: [
+    { value: 'account_daily', label: '账户日报' },
+    { value: 'campaign_daily', label: '计划日报' },
+    { value: 'unit_daily', label: '单元日报' },
+    { value: 'account_realtime', label: '账户实时报' }
+  ]
+};
+
+function defaultReportTypes(platform: string) {
+  return (reportTypeOptionsByPlatform[platform] || reportTypeOptionsByPlatform.douyin).map((item) => item.value);
+}
+
+function syncCardTitle(platform: string) {
+  if (platform === 'baidu') {
+    return '百度营销 P1 同步';
+  }
+  if (platform === 'xiaohongshu') {
+    return '小红书聚光 P1 同步';
+  }
+  return '抖音/腾讯 P0 同步';
+}
+
 function App() {
   const [active, setActive] = useState('config');
 
@@ -437,6 +484,7 @@ function OAuthPage() {
   const [entities, setEntities] = useState<AdEntity[]>([]);
   const [reports, setReports] = useState<RawReportRow[]>([]);
   const [lastResult, setLastResult] = useState<SyncResult | null>(null);
+  const [syncForm] = Form.useForm();
 
   const loadSyncData = async () => {
     const query = `platform=${platform}`;
@@ -447,10 +495,13 @@ function OAuthPage() {
   };
 
   useEffect(() => {
+    syncForm.setFieldsValue({ report_types: defaultReportTypes(platform) });
+    setLastResult(null);
     void loadSyncData().catch(() => undefined);
   }, [platform]);
 
   const selectedAccount = accounts.find((account) => account.platform === platform);
+  const reportTypeOptions = reportTypeOptionsByPlatform[platform] || reportTypeOptionsByPlatform.douyin;
 
   return (
     <Space direction="vertical" size={16} className="page-stack">
@@ -460,12 +511,7 @@ function OAuthPage() {
           <Select
             value={platform}
             onChange={setPlatform}
-            options={[
-              { value: 'douyin', label: '抖音/巨量引擎' },
-              { value: 'tencent', label: '腾讯广告' },
-              { value: 'baidu', label: '百度营销' },
-              { value: 'xiaohongshu', label: '小红书聚光' }
-            ]}
+            options={platformOptions}
           />
           <Button type="primary" onClick={async () => {
             const resp = await api<{ auth_url: string }>(`/api/oauth/${platform}/authorize`, {
@@ -487,9 +533,11 @@ function OAuthPage() {
           <Typography.Paragraph copyable>{authUrl}</Typography.Paragraph>
         </Card>
       )}
-      <Card title="抖音/腾讯 P0 同步">
+      <Card title={syncCardTitle(platform)}>
         <Form
+          form={syncForm}
           layout="inline"
+          initialValues={{ report_types: defaultReportTypes(platform) }}
           onFinish={async (values) => {
             const range = values.range || [];
             const resp = await api<SyncResult>('/api/ad-sync/run', {
@@ -518,16 +566,11 @@ function OAuthPage() {
                 .map((account) => ({ value: account.id, label: `${account.account_name} / ${account.external_account_id}` }))}
             />
           </Form.Item>
-          <Form.Item name="report_types" initialValue={['account_daily', 'campaign_daily', 'adgroup_daily', 'account_hourly']}>
+          <Form.Item name="report_types">
             <Select
               mode="multiple"
               style={{ width: 420 }}
-              options={[
-                { value: 'account_daily', label: '账户日报' },
-                { value: 'campaign_daily', label: '计划日报' },
-                { value: 'adgroup_daily', label: '单元日报' },
-                { value: 'account_hourly', label: '账户小时报' }
-              ]}
+              options={reportTypeOptions}
             />
           </Form.Item>
           <Form.Item name="range">

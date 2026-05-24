@@ -73,17 +73,27 @@ $env:DATABASE_URL="postgres://eduadcrm:eduadcrm@127.0.0.1:5432/eduadcrm?sslmode=
 go run ./services/ad-integration/cmd/ad-integration
 ```
 
-## 抖音与腾讯同步验收
+## 广告平台同步验收
 
-开发环境没有真实平台密钥时，ad-integration 会使用本地 SDK 字段形态客户端生成确定性演示数据。可在前端“广告授权”页面选择抖音或腾讯并点击“运行同步”，也可以直接调用：
+开发环境没有真实平台密钥时，ad-integration 会使用本地 SDK 字段形态客户端生成确定性演示数据。可在前端“广告授权”页面选择抖音、腾讯、百度或小红书并点击“运行同步”，也可以直接调用：
 
 ```powershell
 curl.exe -X POST http://127.0.0.1:8081/api/ad-sync/run -H "Content-Type: application/json" -d "{\"platform\":\"douyin\",\"date_from\":\"2026-05-20\",\"date_to\":\"2026-05-20\"}"
 curl.exe http://127.0.0.1:8081/api/ad-sync/entities?platform=douyin
 curl.exe http://127.0.0.1:8081/api/ad-sync/raw-reports?platform=douyin
+curl.exe -X POST http://127.0.0.1:8081/api/ad-sync/run -H "Content-Type: application/json" -d "{\"platform\":\"baidu\",\"date_from\":\"2026-05-20\",\"date_to\":\"2026-05-20\"}"
+curl.exe -X POST http://127.0.0.1:8081/api/ad-sync/run -H "Content-Type: application/json" -d "{\"platform\":\"xiaohongshu\",\"date_from\":\"2026-05-20\",\"date_to\":\"2026-05-20\"}"
 ```
 
-设置 `DATABASE_URL` 后，账户引用、同步任务、账户/计划/单元快照和原始日报/小时报会写入 `ad_sync` schema。
+百度 P1 默认同步账户日报、计划日报、单元日报，raw 字段保留 `ApiRequestHeader`、`OAuthAuthorizedToolAPI`、`ReportService`、`userName`、`campaignId`、`adgroupId` 等 SDK 形态。小红书 P1 默认同步账户日报、计划日报、单元日报、账户实时报，raw 字段保留 `realtime.AdvertiserRequest`、`realtime.CampaignRequest`、`offline.Request`、`DataReportDTO`、`fee`、`leads` 等字段。设置 `DATABASE_URL` 后，账户引用、同步任务、账户/计划/单元快照和原始日报/小时报会写入 `ad_sync` schema。
+
+data-insight 提供 Python/uv 管理的数据面适配骨架，用于查看百度和小红书字段形态预览：
+
+```powershell
+$env:UV_CACHE_DIR=".cache\uv"
+$env:PYTHONPATH="services\data-insight\src"
+uv run python -c "from data_insight.adapters import baidu, xiaohongshu; print(baidu.request_shape()); print(xiaohongshu.request_shape())"
+```
 
 ## 当前已落地接口
 
@@ -114,3 +124,5 @@ curl.exe http://127.0.0.1:8081/api/ad-sync/raw-reports?platform=douyin
 - `GET /api/ad-sync/jobs`
 - `GET /api/ad-sync/entities`
 - `GET /api/ad-sync/raw-reports`
+- `GET /api/platform-adapters`
+- `GET /api/platform-adapters/preview`
