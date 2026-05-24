@@ -6,8 +6,13 @@ from urllib.parse import parse_qs, urlparse
 
 try:
     from data_insight.adapters import baidu, xiaohongshu
+    from data_insight.etl import ETLService
 except ModuleNotFoundError:
     from adapters import baidu, xiaohongshu
+    from etl import ETLService
+
+
+etl_service = ETLService()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -39,7 +44,34 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._json({"success": False, "error": {"message": "unsupported platform"}})
             return
+        if parsed.path == "/api/etl/batches":
+            self._json({"success": True, "data": etl_service.latest()["batches"]})
+            return
+        if parsed.path == "/api/etl/facts/ad-daily":
+            self._json({"success": True, "data": etl_service.latest()["fact_ad_daily"]})
+            return
+        if parsed.path == "/api/etl/facts/lead-daily":
+            self._json({"success": True, "data": etl_service.latest()["fact_lead_daily"]})
+            return
+        if parsed.path == "/api/etl/facts/hourly":
+            self._json({"success": True, "data": etl_service.latest()["fact_hourly_aggregate"]})
+            return
         self.send_error(404)
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        if parsed.path == "/api/etl/run":
+            payload = self._read_json()
+            batch = etl_service.run(payload.get("ad_rows"), payload.get("lead_rows"))
+            self._json({"success": True, "data": {"batch": batch.to_dict(), "facts": etl_service.latest()}})
+            return
+        self.send_error(404)
+
+    def _read_json(self) -> dict:
+        length = int(self.headers.get("Content-Length", "0"))
+        if length <= 0:
+            return {}
+        return json.loads(self.rfile.read(length).decode("utf-8"))
 
     def _json(self, payload: dict) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
