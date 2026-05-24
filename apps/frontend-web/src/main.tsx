@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Button, Card, Form, Input, Layout, Menu, Select, Space, Table, Tabs, Tag, Typography, message } from 'antd';
-import { ApiOutlined, DashboardOutlined, LockOutlined, SettingOutlined } from '@ant-design/icons';
+import { Button, Card, Form, Input, Layout, Menu, Select, Space, Table, Tabs, Tag, Tree, Typography, message } from 'antd';
+import { ApiOutlined, DashboardOutlined, LockOutlined, SettingOutlined, TeamOutlined } from '@ant-design/icons';
 import { api } from './api/client';
 import './styles/app.css';
 
@@ -49,6 +49,30 @@ type TokenResponse = {
   tenant: { id: string; name: string };
 };
 
+type OrganizationNode = {
+  id: string;
+  name: string;
+  org_type: string;
+  status: string;
+  parent_id?: string;
+  children: OrganizationNode[];
+};
+
+type Team = {
+  id: string;
+  organization_id: string;
+  name: string;
+  status: string;
+};
+
+type Channel = {
+  id: string;
+  organization_id: string;
+  platform: string;
+  display_name: string;
+  status: string;
+};
+
 function App() {
   const [active, setActive] = useState('config');
 
@@ -63,6 +87,7 @@ function App() {
           items={[
             { key: 'config', icon: <SettingOutlined />, label: '系统配置' },
             { key: 'auth', icon: <LockOutlined />, label: '用户鉴权' },
+            { key: 'control', icon: <TeamOutlined />, label: '组织配置' },
             { key: 'oauth', icon: <ApiOutlined />, label: '广告授权' },
             { key: 'overview', icon: <DashboardOutlined />, label: '平台概览' }
           ]}
@@ -75,12 +100,120 @@ function App() {
         <Content className="app-content">
           {active === 'config' && <ConfigPage />}
           {active === 'auth' && <AuthPage />}
+          {active === 'control' && <ControlPlanePage />}
           {active === 'oauth' && <OAuthPage />}
           {active === 'overview' && <OverviewPage />}
         </Content>
       </Layout>
     </Layout>
   );
+}
+
+function ControlPlanePage() {
+  const [orgs, setOrgs] = useState<OrganizationNode[]>([]);
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [channels, setChannels] = useState<Channel[]>([]);
+
+  const load = async () => {
+    setOrgs(await api<OrganizationNode[]>('/api/orgs/tree'));
+    setTeams(await api<Team[]>('/api/teams'));
+    setChannels(await api<Channel[]>('/api/channels'));
+  };
+
+  useEffect(() => {
+    void load().catch(() => undefined);
+  }, []);
+
+  const treeData = orgs.map(toTreeNode);
+
+  return (
+    <Space direction="vertical" size={16} className="page-stack">
+      <Typography.Title level={3}>组织配置</Typography.Title>
+      <Card title="创建组织">
+        <Form layout="inline" onFinish={async (values) => {
+          await api('/api/orgs', { method: 'POST', body: JSON.stringify(values) });
+          message.success('组织已创建');
+          await load();
+        }}>
+          <Form.Item name="name" rules={[{ required: true }]}><Input placeholder="组织名称" /></Form.Item>
+          <Form.Item name="org_type" initialValue="school">
+            <Select
+              style={{ width: 140 }}
+              options={[
+                { value: 'group', label: '集团' },
+                { value: 'region', label: '区域' },
+                { value: 'school', label: '学校' },
+                { value: 'campus', label: '校区' }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="parent_id"><Input placeholder="父组织 ID，可空" /></Form.Item>
+          <Button type="primary" htmlType="submit">创建</Button>
+        </Form>
+      </Card>
+      <Card title="组织树">
+        <Tree treeData={treeData} defaultExpandAll />
+      </Card>
+      <Card title="创建团队">
+        <Form layout="inline" onFinish={async (values) => {
+          await api('/api/teams', { method: 'POST', body: JSON.stringify(values) });
+          message.success('团队已创建');
+          await load();
+        }}>
+          <Form.Item name="organization_id" rules={[{ required: true }]}><Input placeholder="组织 ID" /></Form.Item>
+          <Form.Item name="name" rules={[{ required: true }]}><Input placeholder="团队名称" /></Form.Item>
+          <Button type="primary" htmlType="submit">创建</Button>
+        </Form>
+      </Card>
+      <Card title="团队列表">
+        <Table rowKey="id" dataSource={teams} pagination={false} columns={[
+          { title: '团队 ID', dataIndex: 'id' },
+          { title: '组织 ID', dataIndex: 'organization_id' },
+          { title: '名称', dataIndex: 'name' },
+          { title: '状态', dataIndex: 'status', render: (status) => <Tag>{status}</Tag> }
+        ]} />
+      </Card>
+      <Card title="创建广告渠道">
+        <Form layout="inline" onFinish={async (values) => {
+          await api('/api/channels', { method: 'POST', body: JSON.stringify(values) });
+          message.success('渠道已创建');
+          await load();
+        }}>
+          <Form.Item name="organization_id" rules={[{ required: true }]}><Input placeholder="组织 ID" /></Form.Item>
+          <Form.Item name="platform" initialValue="douyin">
+            <Select
+              style={{ width: 160 }}
+              options={[
+                { value: 'douyin', label: '抖音' },
+                { value: 'tencent', label: '腾讯' },
+                { value: 'baidu', label: '百度' },
+                { value: 'xiaohongshu', label: '小红书' }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="display_name"><Input placeholder="展示名称" /></Form.Item>
+          <Button type="primary" htmlType="submit">创建</Button>
+        </Form>
+      </Card>
+      <Card title="渠道列表">
+        <Table rowKey="id" dataSource={channels} pagination={false} columns={[
+          { title: '渠道 ID', dataIndex: 'id' },
+          { title: '组织 ID', dataIndex: 'organization_id' },
+          { title: '平台', dataIndex: 'platform' },
+          { title: '展示名称', dataIndex: 'display_name' },
+          { title: '状态', dataIndex: 'status', render: (status) => <Tag>{status}</Tag> }
+        ]} />
+      </Card>
+    </Space>
+  );
+}
+
+function toTreeNode(org: OrganizationNode): { key: string; title: string; children: ReturnType<typeof toTreeNode>[] } {
+  return {
+    key: org.id,
+    title: `${org.name} (${org.org_type}) - ${org.id}`,
+    children: (org.children || []).map(toTreeNode)
+  };
 }
 
 function ConfigPage() {

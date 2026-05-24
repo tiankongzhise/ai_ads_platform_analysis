@@ -10,6 +10,19 @@ type Organization struct {
 	OrgType   string    `json:"org_type"`
 	Status    string    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+type OrganizationNode struct {
+	Organization
+	Children []OrganizationNode `json:"children"`
+}
+
+type OrganizationSummary struct {
+	OrganizationID string `json:"organization_id"`
+	OrgCount       int    `json:"org_count"`
+	TeamCount      int    `json:"team_count"`
+	ChannelCount   int    `json:"channel_count"`
 }
 
 type Team struct {
@@ -20,6 +33,7 @@ type Team struct {
 	LeaderUserID   string    `json:"leader_user_id,omitempty"`
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type Channel struct {
@@ -30,4 +44,5 @@ type Channel struct {
 	DisplayName    string    `json:"display_name"`
 	Status         string    `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }

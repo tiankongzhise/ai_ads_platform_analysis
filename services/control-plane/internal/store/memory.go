@@ -2,8 +2,15 @@ package store
 
 import (
 	"errors"
+	"sort"
 	"sync"
 	"time"
+)
+
+var (
+	ErrNotFound      = errors.New("resource not found")
+	ErrInvalidParent = errors.New("invalid parent organization")
+	ErrCycleMove     = errors.New("organization move would create a cycle")
 )
 
 type Tenant struct {
@@ -133,6 +140,13 @@ func (s *MemoryStore) SaveOrganization(org Organization) {
 	s.orgs[org.ID] = org
 }
 
+func (s *MemoryStore) Organization(tenantID string, orgID string) (Organization, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	org, ok := s.orgs[orgID]
+	return org, ok && org.TenantID == tenantID
+}
+
 func (s *MemoryStore) Organizations(tenantID string) []Organization {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -142,13 +156,159 @@ func (s *MemoryStore) Organizations(tenantID string) []Organization {
 			out = append(out, org)
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].ParentID == out[j].ParentID {
+			return out[i].CreatedAt.Before(out[j].CreatedAt)
+		}
+		return out[i].ParentID < out[j].ParentID
+	})
 	return out
+}
+
+func (s *MemoryStore) OrganizationTree(tenantID string) []OrganizationNode {
+	orgs := s.Organizations(tenantID)
+	childrenByParent := map[string][]OrganizationNode{}
+	for _, org := range orgs {
+		node := OrganizationNode{Organization: org, Children: []OrganizationNode{}}
+		childrenByParent[org.ParentID] = append(childrenByParent[org.ParentID], node)
+	}
+	var attach func(parentID string) []OrganizationNode
+	attach = func(parentID string) []OrganizationNode {
+		nodes := childrenByParent[parentID]
+		for index := range nodes {
+			nodes[index].Children = attach(nodes[index].ID)
+		}
+		return nodes
+	}
+	return attach("")
+}
+
+func (s *MemoryStore) UpdateOrganization(tenantID string, orgID string, name string, orgType string, status string, updatedAt time.Time) (Organization, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	org, ok := s.orgs[orgID]
+	if !ok || org.TenantID != tenantID {
+		return Organization{}, ErrNotFound
+	}
+	if name != "" {
+		org.Name = name
+	}
+	if orgType != "" {
+		org.OrgType = orgType
+	}
+	if status != "" {
+		org.Status = status
+	}
+	org.UpdatedAt = updatedAt
+	s.orgs[orgID] = org
+	return org, nil
+}
+
+func (s *MemoryStore) MoveOrganization(tenantID string, orgID string, parentID string, updatedAt time.Time) (Organization, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	org, ok := s.orgs[orgID]
+	if !ok || org.TenantID != tenantID {
+		return Organization{}, ErrNotFound
+	}
+	if parentID == orgID {
+		return Organization{}, ErrCycleMove
+	}
+	if parentID != "" {
+		parent, ok := s.orgs[parentID]
+		if !ok || parent.TenantID != tenantID {
+			return Organization{}, ErrInvalidParent
+		}
+		for current := parent; current.ParentID != ""; {
+			if current.ParentID == orgID {
+				return Organization{}, ErrCycleMove
+			}
+			next, ok := s.orgs[current.ParentID]
+			if !ok || next.TenantID != tenantID {
+				break
+			}
+			current = next
+		}
+	}
+	org.ParentID = parentID
+	org.UpdatedAt = updatedAt
+	s.orgs[orgID] = org
+	return org, nil
+}
+
+func (s *MemoryStore) OrganizationSummary(tenantID string, orgID string) (OrganizationSummary, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if orgID != "" {
+		org, ok := s.orgs[orgID]
+		if !ok || org.TenantID != tenantID {
+			return OrganizationSummary{}, ErrNotFound
+		}
+	}
+	descendants := map[string]bool{}
+	if orgID != "" {
+		descendants[orgID] = true
+		changed := true
+		for changed {
+			changed = false
+			for _, org := range s.orgs {
+				if org.TenantID == tenantID && descendants[org.ParentID] && !descendants[org.ID] {
+					descendants[org.ID] = true
+					changed = true
+				}
+			}
+		}
+	}
+	inScope := func(candidateOrgID string) bool {
+		if orgID == "" {
+			return true
+		}
+		return descendants[candidateOrgID]
+	}
+	summary := OrganizationSummary{OrganizationID: orgID}
+	for _, org := range s.orgs {
+		if org.TenantID == tenantID && inScope(org.ID) {
+			summary.OrgCount++
+		}
+	}
+	for _, team := range s.teams {
+		if team.TenantID == tenantID && inScope(team.OrganizationID) {
+			summary.TeamCount++
+		}
+	}
+	for _, channel := range s.channels {
+		if channel.TenantID == tenantID && inScope(channel.OrganizationID) {
+			summary.ChannelCount++
+		}
+	}
+	return summary, nil
 }
 
 func (s *MemoryStore) SaveTeam(team Team) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.teams[team.ID] = team
+}
+
+func (s *MemoryStore) UpdateTeam(tenantID string, teamID string, name string, leaderUserID string, status string, updatedAt time.Time) (Team, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	team, ok := s.teams[teamID]
+	if !ok || team.TenantID != tenantID {
+		return Team{}, ErrNotFound
+	}
+	if name != "" {
+		team.Name = name
+	}
+	if leaderUserID != "" {
+		team.LeaderUserID = leaderUserID
+	}
+	if status != "" {
+		team.Status = status
+	}
+	team.UpdatedAt = updatedAt
+	s.teams[teamID] = team
+	return team, nil
 }
 
 func (s *MemoryStore) Teams(tenantID string) []Team {
@@ -167,6 +327,24 @@ func (s *MemoryStore) SaveChannel(channel Channel) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.channels[channel.ID] = channel
+}
+
+func (s *MemoryStore) UpdateChannel(tenantID string, channelID string, displayName string, status string, updatedAt time.Time) (Channel, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	channel, ok := s.channels[channelID]
+	if !ok || channel.TenantID != tenantID {
+		return Channel{}, ErrNotFound
+	}
+	if displayName != "" {
+		channel.DisplayName = displayName
+	}
+	if status != "" {
+		channel.Status = status
+	}
+	channel.UpdatedAt = updatedAt
+	s.channels[channelID] = channel
+	return channel, nil
 }
 
 func (s *MemoryStore) Channels(tenantID string) []Channel {

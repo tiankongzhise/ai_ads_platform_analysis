@@ -41,10 +41,15 @@ func (s *Server) Router() http.Handler {
 	mux.HandleFunc("GET /api/auth/profile", s.profile)
 	mux.HandleFunc("GET /api/orgs/tree", s.listOrganizations)
 	mux.HandleFunc("POST /api/orgs", s.createOrganization)
+	mux.HandleFunc("PATCH /api/orgs/{org_id}", s.updateOrganization)
+	mux.HandleFunc("POST /api/orgs/{org_id}/move", s.moveOrganization)
+	mux.HandleFunc("GET /api/orgs/{org_id}/summary", s.organizationSummary)
 	mux.HandleFunc("GET /api/teams", s.listTeams)
 	mux.HandleFunc("POST /api/teams", s.createTeam)
+	mux.HandleFunc("PATCH /api/teams/{team_id}", s.updateTeam)
 	mux.HandleFunc("GET /api/channels", s.listChannels)
 	mux.HandleFunc("POST /api/channels", s.createChannel)
+	mux.HandleFunc("PATCH /api/channels/{channel_id}", s.updateChannel)
 	return withCORS(mux)
 }
 
@@ -172,7 +177,7 @@ func (s *Server) listOrganizations(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
 		return
 	}
-	httpx.WriteJSON(w, r, http.StatusOK, s.store.Organizations(tenantID))
+	httpx.WriteJSON(w, r, http.StatusOK, s.store.OrganizationTree(tenantID))
 }
 
 func (s *Server) createOrganization(w http.ResponseWriter, r *http.Request) {
@@ -201,9 +206,76 @@ func (s *Server) createOrganization(w http.ResponseWriter, r *http.Request) {
 		OrgType:   body.OrgType,
 		Status:    "active",
 		CreatedAt: nowUTC(),
+		UpdatedAt: nowUTC(),
 	}
 	s.store.SaveOrganization(org)
 	httpx.WriteJSON(w, r, http.StatusCreated, org)
+}
+
+func (s *Server) updateOrganization(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := s.tenantID(r)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	var body struct {
+		Name    string `json:"name"`
+		OrgType string `json:"org_type"`
+		Status  string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "请求体不是有效 JSON", nil)
+		return
+	}
+	org, err := s.store.UpdateOrganization(tenantID, r.PathValue("org_id"), body.Name, body.OrgType, body.Status, nowUTC())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "ORG_NOT_FOUND", "组织不存在", nil)
+		return
+	}
+	httpx.WriteJSON(w, r, http.StatusOK, org)
+}
+
+func (s *Server) moveOrganization(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := s.tenantID(r)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	var body struct {
+		ParentID string `json:"parent_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "请求体不是有效 JSON", nil)
+		return
+	}
+	org, err := s.store.MoveOrganization(tenantID, r.PathValue("org_id"), body.ParentID, nowUTC())
+	if err != nil {
+		status := http.StatusBadRequest
+		code := "ORG_MOVE_INVALID"
+		message := err.Error()
+		if err == store.ErrNotFound {
+			status = http.StatusNotFound
+			code = "ORG_NOT_FOUND"
+			message = "组织不存在"
+		}
+		httpx.WriteError(w, r, status, code, message, nil)
+		return
+	}
+	httpx.WriteJSON(w, r, http.StatusOK, org)
+}
+
+func (s *Server) organizationSummary(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := s.tenantID(r)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	summary, err := s.store.OrganizationSummary(tenantID, r.PathValue("org_id"))
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "ORG_NOT_FOUND", "组织不存在", nil)
+		return
+	}
+	httpx.WriteJSON(w, r, http.StatusOK, summary)
 }
 
 func (s *Server) listTeams(w http.ResponseWriter, r *http.Request) {
@@ -238,9 +310,33 @@ func (s *Server) createTeam(w http.ResponseWriter, r *http.Request) {
 		LeaderUserID:   body.LeaderUserID,
 		Status:         "active",
 		CreatedAt:      nowUTC(),
+		UpdatedAt:      nowUTC(),
 	}
 	s.store.SaveTeam(team)
 	httpx.WriteJSON(w, r, http.StatusCreated, team)
+}
+
+func (s *Server) updateTeam(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := s.tenantID(r)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	var body struct {
+		Name         string `json:"name"`
+		LeaderUserID string `json:"leader_user_id"`
+		Status       string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "请求体不是有效 JSON", nil)
+		return
+	}
+	team, err := s.store.UpdateTeam(tenantID, r.PathValue("team_id"), body.Name, body.LeaderUserID, body.Status, nowUTC())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "TEAM_NOT_FOUND", "团队不存在", nil)
+		return
+	}
+	httpx.WriteJSON(w, r, http.StatusOK, team)
 }
 
 func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
@@ -278,9 +374,32 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		DisplayName:    body.DisplayName,
 		Status:         "active",
 		CreatedAt:      nowUTC(),
+		UpdatedAt:      nowUTC(),
 	}
 	s.store.SaveChannel(channel)
 	httpx.WriteJSON(w, r, http.StatusCreated, channel)
+}
+
+func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
+	tenantID, ok := s.tenantID(r)
+	if !ok {
+		httpx.WriteError(w, r, http.StatusUnauthorized, "UNAUTHORIZED", "请先登录", nil)
+		return
+	}
+	var body struct {
+		DisplayName string `json:"display_name"`
+		Status      string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, r, http.StatusBadRequest, "INVALID_JSON", "请求体不是有效 JSON", nil)
+		return
+	}
+	channel, err := s.store.UpdateChannel(tenantID, r.PathValue("channel_id"), body.DisplayName, body.Status, nowUTC())
+	if err != nil {
+		httpx.WriteError(w, r, http.StatusNotFound, "CHANNEL_NOT_FOUND", "渠道不存在", nil)
+		return
+	}
+	httpx.WriteJSON(w, r, http.StatusOK, channel)
 }
 
 func (s *Server) claimsFromRequest(r *http.Request) (auth.Claims, bool) {

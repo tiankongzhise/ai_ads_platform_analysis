@@ -36,16 +36,31 @@ paths:
   /api/orgs:
     post:
       summary: 创建组织节点
+  /api/orgs/{org_id}:
+    patch:
+      summary: 更新组织节点
+  /api/orgs/{org_id}/move:
+    post:
+      summary: 移动组织节点并防止形成循环
+  /api/orgs/{org_id}/summary:
+    get:
+      summary: 获取组织子树汇总
   /api/teams:
     get:
       summary: 查询招生团队
     post:
       summary: 创建招生团队
+  /api/teams/{team_id}:
+    patch:
+      summary: 更新或停用招生团队
   /api/channels:
     get:
       summary: 查询广告渠道
     post:
       summary: 创建广告渠道
+  /api/channels/{channel_id}:
+    patch:
+      summary: 更新或停用广告渠道
   /api/oauth/{platform}/authorize:
     post:
       summary: 生成广告平台授权链接和一次性 state

@@ -45,10 +45,15 @@ uv run --package eduadcrm-lead-lifecycle lead-lifecycle
 - `GET /api/auth/profile`
 - `GET /api/orgs/tree`
 - `POST /api/orgs`
+- `PATCH /api/orgs/{org_id}`
+- `POST /api/orgs/{org_id}/move`
+- `GET /api/orgs/{org_id}/summary`
 - `GET /api/teams`
 - `POST /api/teams`
+- `PATCH /api/teams/{team_id}`
 - `GET /api/channels`
 - `POST /api/channels`
+- `PATCH /api/channels/{channel_id}`
 - `POST /api/oauth/{platform}/authorize`
 - `GET /api/oauth/{platform}/callback`
 - `GET /api/ad-accounts`
