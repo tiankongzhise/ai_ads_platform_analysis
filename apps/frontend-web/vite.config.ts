@@ -1,0 +1,17 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+
+export default defineConfig({
+  plugins: [react()],
+  server: {
+    port: 5173,
+    proxy: {
+      '/api/auth': 'http://127.0.0.1:8080',
+      '/api/config': 'http://127.0.0.1:8080',
+      '/api/oauth': 'http://127.0.0.1:8081',
+      '/api/ad-accounts': 'http://127.0.0.1:8081',
+      '/api/ad-sync': 'http://127.0.0.1:8081'
+    }
+  }
+});
+
