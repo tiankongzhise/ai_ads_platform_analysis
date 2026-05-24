@@ -1,0 +1,37 @@
+version = 1
+revision = 3
+requires-python = ">=3.12"
+
+[manifest]
+members = [
+    "eduadcrm-data-insight",
+    "eduadcrm-lead-lifecycle",
+    "eduadcrm-platform-ops",
+    "eduadcrm-services",
+    "eduadcrm-virtual-account",
+]
+
+[[package]]
+name = "eduadcrm-data-insight"
+version = "0.1.0"
+source = { virtual = "services/data-insight" }
+
+[[package]]
+name = "eduadcrm-lead-lifecycle"
+version = "0.1.0"
+source = { virtual = "services/lead-lifecycle" }
+
+[[package]]
+name = "eduadcrm-platform-ops"
+version = "0.1.0"
+source = { virtual = "services/platform-ops" }
+
+[[package]]
+name = "eduadcrm-services"
+version = "0.1.0"
+source = { virtual = "." }
+
+[[package]]
+name = "eduadcrm-virtual-account"
+version = "0.1.0"
+source = { virtual = "services/virtual-account" }
