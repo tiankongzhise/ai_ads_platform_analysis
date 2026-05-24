@@ -297,6 +297,38 @@ type ReportAdvice = {
   action: string;
 };
 
+type VirtualAccount = {
+  id: string;
+  tenant_id: string;
+  owner_user_id: string;
+  display_name: string;
+  purpose: string;
+  status: string;
+  valid_days: number;
+  created_at: string;
+  expires_at: string;
+  destroyed_at: string;
+  migration_target_user_id: string;
+  cleanup_verified: boolean;
+  resources: Record<string, string[]>;
+};
+
+type VirtualCleanupLog = {
+  id: string;
+  virtual_account_id: string;
+  tenant_id: string;
+  reason: string;
+  status: string;
+  actor: string;
+  token_refs_deleted: number;
+  files_deleted: number;
+  cache_keys_deleted: number;
+  queue_messages_deleted: number;
+  business_records_found: number;
+  no_business_data: boolean;
+  created_at: string;
+};
+
 const platformOptions = [
   { value: 'douyin', label: '抖音/巨量引擎' },
   { value: 'tencent', label: '腾讯广告' },
@@ -366,6 +398,7 @@ function App() {
             { key: 'bi', icon: <DashboardOutlined />, label: '标准 BI' },
             { key: 'bi-config', icon: <SettingOutlined />, label: 'BI 配置' },
             { key: 'reports', icon: <ImportOutlined />, label: '报表中心' },
+            { key: 'virtual-accounts', icon: <LockOutlined />, label: '虚拟账户' },
             { key: 'overview', icon: <DashboardOutlined />, label: '平台概览' }
           ]}
         />
@@ -385,6 +418,7 @@ function App() {
           {active === 'bi' && <BIPage />}
           {active === 'bi-config' && <BIConfigPage />}
           {active === 'reports' && <ReportPage />}
+          {active === 'virtual-accounts' && <VirtualAccountPage />}
           {active === 'overview' && <OverviewPage />}
         </Content>
       </Layout>
@@ -1626,6 +1660,137 @@ function adviceSeverityColor(severity: string) {
     return 'orange';
   }
   return 'blue';
+}
+
+function VirtualAccountPage() {
+  const tenantId = 'demo-tenant';
+  const [accounts, setAccounts] = useState<VirtualAccount[]>([]);
+  const [logs, setLogs] = useState<VirtualCleanupLog[]>([]);
+  const [form] = Form.useForm();
+
+  const load = async () => {
+    const [accountRows, logRows] = await Promise.all([
+      api<VirtualAccount[]>(`/api/virtual-accounts?tenant_id=${encodeURIComponent(tenantId)}`),
+      api<VirtualCleanupLog[]>(`/api/virtual-accounts/cleanup-logs?tenant_id=${encodeURIComponent(tenantId)}`)
+    ]);
+    setAccounts(accountRows);
+    setLogs(logRows);
+  };
+
+  useEffect(() => {
+    void load().catch(() => undefined);
+  }, []);
+
+  const mutateAccount = async (accountId: string, action: 'authorize-migration' | 'destroy') => {
+    const body = action === 'authorize-migration'
+      ? { target_user_id: 'real-user', authorized_by: 'frontend-manager', reason: '迁移虚拟账户配置' }
+      : { actor: 'frontend-manager', reason: 'manual_destroy' };
+    await api(`/api/virtual-accounts/${accountId}/${action}`, { method: 'POST', body: JSON.stringify(body) });
+    message.success(action === 'authorize-migration' ? '迁移授权已创建' : '虚拟账户已销毁');
+    await load();
+  };
+
+  return (
+    <Space direction="vertical" size={16} className="page-stack">
+      <Typography.Title level={3}>虚拟账户</Typography.Title>
+      <Card title="创建虚拟账户">
+        <Form
+          form={form}
+          layout="inline"
+          initialValues={{ tenant_id: tenantId, owner_user_id: 'demo-user', display_name: '7 天虚拟投放账户', purpose: '短期投放联调', valid_days: 7 }}
+          onFinish={async (values) => {
+            await api<VirtualAccount>('/api/virtual-accounts', { method: 'POST', body: JSON.stringify(values) });
+            message.success('虚拟账户已创建');
+            form.resetFields();
+            await load();
+          }}
+        >
+          <Form.Item name="tenant_id" rules={[{ required: true }]}><Input placeholder="租户 ID" /></Form.Item>
+          <Form.Item name="owner_user_id" rules={[{ required: true }]}><Input placeholder="使用人 ID" /></Form.Item>
+          <Form.Item name="display_name" rules={[{ required: true }]}><Input placeholder="账户名称" /></Form.Item>
+          <Form.Item name="purpose" rules={[{ required: true }]}><Input placeholder="用途" /></Form.Item>
+          <Form.Item name="valid_days" rules={[{ required: true }]}>
+            <Select
+              style={{ width: 120 }}
+              options={[
+                { label: '1 天', value: 1 },
+                { label: '3 天', value: 3 },
+                { label: '7 天', value: 7 }
+              ]}
+            />
+          </Form.Item>
+          <Button type="primary" htmlType="submit">创建</Button>
+          <Button onClick={async () => {
+            const result = await api<{ cleaned: number; logs: VirtualCleanupLog[] }>('/api/virtual-accounts/cleanup-expired', {
+              method: 'POST',
+              body: JSON.stringify({ actor: 'frontend-scheduler' })
+            });
+            message.success(`到期清理完成：${result.cleaned} 个账户`);
+            await load();
+          }}>清理到期</Button>
+          <Button onClick={load}>刷新</Button>
+        </Form>
+      </Card>
+      <Card title="账户列表">
+        <Table
+          rowKey="id"
+          dataSource={accounts}
+          pagination={{ pageSize: 6 }}
+          columns={[
+            { title: '名称', dataIndex: 'display_name' },
+            { title: '使用人', dataIndex: 'owner_user_id' },
+            { title: '状态', dataIndex: 'status', render: (status) => <Tag color={virtualAccountStatusColor(status)}>{status}</Tag> },
+            { title: '有效期', render: (_, row) => `${row.valid_days} 天` },
+            { title: '到期时间', dataIndex: 'expires_at' },
+            { title: '迁移目标', dataIndex: 'migration_target_user_id', render: (value) => value || '-' },
+            { title: '清理验证', dataIndex: 'cleanup_verified', render: (value) => <Tag color={value ? 'green' : 'orange'}>{String(value)}</Tag> },
+            { title: '资源', render: (_, row) => <Typography.Text code>{compactJson(row.resources)}</Typography.Text> },
+            {
+              title: '操作',
+              render: (_, row) => (
+                <Space>
+                  <Button size="small" onClick={() => mutateAccount(row.id, 'authorize-migration')}>迁移授权</Button>
+                  <Button size="small" danger onClick={() => mutateAccount(row.id, 'destroy')}>销毁</Button>
+                </Space>
+              )
+            }
+          ]}
+        />
+      </Card>
+      <Card title="清理审计">
+        <Table
+          rowKey="id"
+          dataSource={logs}
+          pagination={{ pageSize: 8 }}
+          columns={[
+            { title: '账户 ID', dataIndex: 'virtual_account_id' },
+            { title: '原因', dataIndex: 'reason' },
+            { title: '状态', dataIndex: 'status', render: (status) => <Tag color={status === 'success' ? 'green' : 'red'}>{status}</Tag> },
+            { title: 'Token', dataIndex: 'token_refs_deleted' },
+            { title: '文件', dataIndex: 'files_deleted' },
+            { title: 'Cache', dataIndex: 'cache_keys_deleted' },
+            { title: 'Queue', dataIndex: 'queue_messages_deleted' },
+            { title: '业务数据', dataIndex: 'business_records_found' },
+            { title: '无残留', dataIndex: 'no_business_data', render: (value) => <Tag color={value ? 'green' : 'red'}>{String(value)}</Tag> },
+            { title: '时间', dataIndex: 'created_at' }
+          ]}
+        />
+      </Card>
+    </Space>
+  );
+}
+
+function virtualAccountStatusColor(status: string) {
+  if (status === 'active') {
+    return 'green';
+  }
+  if (status === 'migration_authorized') {
+    return 'blue';
+  }
+  if (status === 'destroyed') {
+    return 'default';
+  }
+  return 'red';
 }
 
 function OverviewPage() {

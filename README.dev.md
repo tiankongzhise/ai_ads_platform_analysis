@@ -37,6 +37,7 @@ psql $env:DATABASE_URL -f migrations/004_lead_conflict_attribution.sql
 psql $env:DATABASE_URL -f migrations/005_etl_facts.sql
 psql $env:DATABASE_URL -f migrations/006_bi_config.sql
 psql $env:DATABASE_URL -f migrations/007_reports.sql
+psql $env:DATABASE_URL -f migrations/008_virtual_accounts.sql
 ```
 
 运行 PostgreSQL 集成测试：
@@ -180,6 +181,23 @@ curl.exe -X POST http://127.0.0.1:8091/api/reports -H "Content-Type: application
 
 创建任务返回的 `download_url` 可直接下载 `.xlsx` 文件；下载失败会返回 `invalid download token`。
 
+## 虚拟账户验收
+
+virtual-account 支持创建 1-7 天虚拟账户，默认 7 天；支持迁移授权、手动销毁、到期清理和清理审计。清理时会分别记录 token、文件、cache、queue 删除数量，并校验无业务数据残留。前端“虚拟账户”页面可直接操作，也可以直接调用：
+
+```powershell
+$env:UV_CACHE_DIR=".cache\uv"
+$env:PYTHONPATH="services\virtual-account\src"
+uv run python -m unittest services/virtual-account/src/virtual_account/service_test.py
+uv run --package eduadcrm-virtual-account virtual-account
+curl.exe -X POST http://127.0.0.1:8092/api/virtual-accounts -H "Content-Type: application/json" -d "{\"tenant_id\":\"demo-tenant\",\"owner_user_id\":\"demo-user\",\"display_name\":\"7 天虚拟投放账户\",\"purpose\":\"短期投放联调\"}"
+curl.exe http://127.0.0.1:8092/api/virtual-accounts
+curl.exe -X POST http://127.0.0.1:8092/api/virtual-accounts/{account_id}/authorize-migration -H "Content-Type: application/json" -d "{\"target_user_id\":\"real-user\",\"authorized_by\":\"demo-manager\",\"reason\":\"迁移虚拟账户配置\"}"
+curl.exe -X POST http://127.0.0.1:8092/api/virtual-accounts/{account_id}/destroy -H "Content-Type: application/json" -d "{\"actor\":\"demo-manager\",\"reason\":\"manual_destroy\"}"
+curl.exe -X POST http://127.0.0.1:8092/api/virtual-accounts/cleanup-expired -H "Content-Type: application/json" -d "{\"actor\":\"scheduler\"}"
+curl.exe http://127.0.0.1:8092/api/virtual-accounts/cleanup-logs
+```
+
 ## 当前已落地接口
 
 - `GET /api/config`
@@ -252,3 +270,10 @@ curl.exe -X POST http://127.0.0.1:8091/api/reports -H "Content-Type: application
 - `GET /api/reports/{report_id}/download`
 - `GET /api/reports/advice`
 - `GET /api/reports/consistency`
+- `GET /api/virtual-accounts`
+- `POST /api/virtual-accounts`
+- `GET /api/virtual-accounts/{account_id}`
+- `POST /api/virtual-accounts/{account_id}/authorize-migration`
+- `POST /api/virtual-accounts/{account_id}/destroy`
+- `POST /api/virtual-accounts/cleanup-expired`
+- `GET /api/virtual-accounts/cleanup-logs`

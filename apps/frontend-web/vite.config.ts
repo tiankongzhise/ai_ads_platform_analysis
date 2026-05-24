@@ -17,7 +17,8 @@ export default defineConfig({
       '/api/etl': 'http://127.0.0.1:8091',
       '/api/analytics': 'http://127.0.0.1:8091',
       '/api/bi': 'http://127.0.0.1:8091',
-      '/api/reports': 'http://127.0.0.1:8091'
+      '/api/reports': 'http://127.0.0.1:8091',
+      '/api/virtual-accounts': 'http://127.0.0.1:8092'
     }
   }
 });
