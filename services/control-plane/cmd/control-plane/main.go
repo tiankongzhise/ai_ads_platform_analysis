@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 
 	"eduadcrm/services/control-plane/internal/app"
 	"eduadcrm/services/control-plane/internal/config"
+	"eduadcrm/services/control-plane/internal/store"
 )
 
 func main() {
@@ -19,12 +21,32 @@ func main() {
 		log.Fatalf("load config: %v", err)
 	}
 
-	server := app.NewServer(manager)
+	server, cleanup, err := newServer(manager)
+	if err != nil {
+		log.Fatalf("create server: %v", err)
+	}
+	defer cleanup()
+
 	addr := getenv("CONTROL_PLANE_ADDR", ":8080")
 	log.Printf("control-plane listening on %s", addr)
 	if err := http.ListenAndServe(addr, server.Router()); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func newServer(manager *config.Manager) (*app.Server, func(), error) {
+	if getenv("CONTROL_PLANE_STORE", "memory") != "postgres" {
+		return app.NewServer(manager), func() {}, nil
+	}
+	databaseURL := getenv("DATABASE_URL", "")
+	if databaseURL == "" {
+		return nil, nil, os.ErrInvalid
+	}
+	postgresStore, err := store.NewPostgresStore(context.Background(), databaseURL)
+	if err != nil {
+		return nil, nil, err
+	}
+	return app.NewServerWithStore(manager, postgresStore), postgresStore.Close, nil
 }
 
 func getenv(key string, fallback string) string {

@@ -99,6 +99,13 @@ func (s *MemoryStore) UserByID(userID string) (User, bool) {
 	return user, ok
 }
 
+func (s *MemoryStore) TenantByID(tenantID string) (Tenant, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	tenant, ok := s.tenants[tenantID]
+	return tenant, ok
+}
+
 func (s *MemoryStore) SaveRefreshToken(token RefreshToken) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -166,21 +173,7 @@ func (s *MemoryStore) Organizations(tenantID string) []Organization {
 }
 
 func (s *MemoryStore) OrganizationTree(tenantID string) []OrganizationNode {
-	orgs := s.Organizations(tenantID)
-	childrenByParent := map[string][]OrganizationNode{}
-	for _, org := range orgs {
-		node := OrganizationNode{Organization: org, Children: []OrganizationNode{}}
-		childrenByParent[org.ParentID] = append(childrenByParent[org.ParentID], node)
-	}
-	var attach func(parentID string) []OrganizationNode
-	attach = func(parentID string) []OrganizationNode {
-		nodes := childrenByParent[parentID]
-		for index := range nodes {
-			nodes[index].Children = attach(nodes[index].ID)
-		}
-		return nodes
-	}
-	return attach("")
+	return buildOrganizationTree(s.Organizations(tenantID))
 }
 
 func (s *MemoryStore) UpdateOrganization(tenantID string, orgID string, name string, orgType string, status string, updatedAt time.Time) (Organization, error) {

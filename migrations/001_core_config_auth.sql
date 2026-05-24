@@ -82,6 +82,45 @@ CREATE TABLE IF NOT EXISTS auth.refresh_tokens (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS auth.organizations (
+  id uuid PRIMARY KEY,
+  tenant_id uuid NOT NULL REFERENCES auth.tenants(id),
+  parent_id uuid REFERENCES auth.organizations(id),
+  name text NOT NULL,
+  org_type text NOT NULL CHECK (org_type IN ('group', 'region', 'school', 'campus', 'department', 'other')),
+  status text NOT NULL DEFAULT 'active',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_organizations_tenant_parent ON auth.organizations(tenant_id, parent_id);
+
+CREATE TABLE IF NOT EXISTS auth.admission_teams (
+  id uuid PRIMARY KEY,
+  tenant_id uuid NOT NULL REFERENCES auth.tenants(id),
+  organization_id uuid NOT NULL REFERENCES auth.organizations(id),
+  name text NOT NULL,
+  leader_user_id uuid,
+  status text NOT NULL DEFAULT 'active',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_admission_teams_tenant_org ON auth.admission_teams(tenant_id, organization_id);
+
+CREATE TABLE IF NOT EXISTS auth.ad_channels (
+  id uuid PRIMARY KEY,
+  tenant_id uuid NOT NULL REFERENCES auth.tenants(id),
+  organization_id uuid NOT NULL REFERENCES auth.organizations(id),
+  platform text NOT NULL CHECK (platform IN ('douyin', 'tencent', 'baidu', 'xiaohongshu', 'other')),
+  display_name text NOT NULL,
+  status text NOT NULL DEFAULT 'active',
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_ad_channels_tenant_org ON auth.ad_channels(tenant_id, organization_id);
+
 CREATE TABLE IF NOT EXISTS audit.audit_logs (
   id uuid PRIMARY KEY,
   tenant_id uuid,
@@ -93,4 +132,3 @@ CREATE TABLE IF NOT EXISTS audit.audit_logs (
   detail jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now()
 );
-

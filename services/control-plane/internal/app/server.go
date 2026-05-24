@@ -1,6 +1,8 @@
 package app
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -15,15 +17,18 @@ import (
 type Server struct {
 	config *config.Manager
 	auth   *auth.Service
-	store  *store.MemoryStore
+	store  store.Repository
 }
 
 func NewServer(manager *config.Manager) *Server {
-	memory := store.NewMemoryStore()
+	return NewServerWithStore(manager, store.NewMemoryStore())
+}
+
+func NewServerWithStore(manager *config.Manager, repository store.Repository) *Server {
 	return &Server{
 		config: manager,
-		auth:   auth.NewService(manager, memory),
-		store:  memory,
+		auth:   auth.NewService(manager, repository),
+		store:  repository,
 	}
 }
 
@@ -420,7 +425,14 @@ func (s *Server) tenantID(r *http.Request) (string, bool) {
 }
 
 func newLocalID() string {
-	return strings.ReplaceAll(nowUTC().Format("20060102150405.000000000"), ".", "")
+	var bytes [16]byte
+	if _, err := rand.Read(bytes[:]); err != nil {
+		return strings.ReplaceAll(nowUTC().Format("20060102150405.000000000"), ".", "")
+	}
+	bytes[6] = (bytes[6] & 0x0f) | 0x40
+	bytes[8] = (bytes[8] & 0x3f) | 0x80
+	encoded := hex.EncodeToString(bytes[:])
+	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32]
 }
 
 func nowUTC() time.Time {

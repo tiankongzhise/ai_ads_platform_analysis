@@ -12,6 +12,28 @@ go run ./services/ad-integration/cmd/ad-integration
 npm.cmd --prefix apps/frontend-web run dev
 ```
 
+默认 control-plane 使用内存存储。切换到 PostgreSQL：
+
+```powershell
+$env:CONTROL_PLANE_STORE="postgres"
+$env:DATABASE_URL="postgres://eduadcrm:eduadcrm@127.0.0.1:5432/eduadcrm?sslmode=disable"
+go run ./services/control-plane/cmd/control-plane
+```
+
+执行迁移：
+
+```powershell
+psql $env:DATABASE_URL -f migrations/001_core_config_auth.sql
+psql $env:DATABASE_URL -f migrations/002_ad_oauth.sql
+```
+
+运行 PostgreSQL 集成测试：
+
+```powershell
+$env:CONTROL_PLANE_INTEGRATION_DATABASE_URL=$env:DATABASE_URL
+go test ./services/control-plane/internal/store -run TestPostgresStoreIntegration
+```
+
 Python 服务统一使用 `uv` 管理。若默认 uv 缓存不可用，可先设置：
 
 ```powershell

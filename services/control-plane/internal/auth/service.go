@@ -13,7 +13,7 @@ import (
 
 type Service struct {
 	cfg   *config.Manager
-	store *store.MemoryStore
+	store store.Repository
 }
 
 type RegisterRequest struct {
@@ -39,8 +39,8 @@ type TokenResponse struct {
 	Tenant                store.Tenant `json:"tenant"`
 }
 
-func NewService(cfg *config.Manager, memory *store.MemoryStore) *Service {
-	return &Service{cfg: cfg, store: memory}
+func NewService(cfg *config.Manager, repository store.Repository) *Service {
+	return &Service{cfg: cfg, store: repository}
 }
 
 func (s *Service) Register(req RegisterRequest) (TokenResponse, error) {
@@ -85,7 +85,10 @@ func (s *Service) Login(req LoginRequest) (TokenResponse, error) {
 	if !ok || !VerifyPassword(passwordHash, req.Password) {
 		return TokenResponse{}, errors.New("invalid email or password")
 	}
-	tenant := store.Tenant{ID: user.TenantID, Name: "当前租户", Type: "formal", Status: "active"}
+	tenant, ok := s.store.TenantByID(user.TenantID)
+	if !ok {
+		return TokenResponse{}, errors.New("tenant not found")
+	}
 	return s.issueTokens(user, tenant)
 }
 
@@ -106,7 +109,10 @@ func (s *Service) Refresh(refreshToken string) (TokenResponse, error) {
 	if authCfg.RefreshTokenRotation {
 		s.store.RevokeRefreshToken(tokenHash)
 	}
-	tenant := store.Tenant{ID: user.TenantID, Name: "当前租户", Type: "formal", Status: "active"}
+	tenant, ok := s.store.TenantByID(user.TenantID)
+	if !ok {
+		return TokenResponse{}, errors.New("tenant not found")
+	}
 	return s.issueTokens(user, tenant)
 }
 
@@ -187,5 +193,8 @@ func newID() string {
 	if _, err := rand.Read(bytes[:]); err != nil {
 		return hex.EncodeToString([]byte(time.Now().Format("20060102150405.000000000")))
 	}
-	return hex.EncodeToString(bytes[:])
+	bytes[6] = (bytes[6] & 0x0f) | 0x40
+	bytes[8] = (bytes[8] & 0x3f) | 0x80
+	encoded := hex.EncodeToString(bytes[:])
+	return encoded[0:8] + "-" + encoded[8:12] + "-" + encoded[12:16] + "-" + encoded[16:20] + "-" + encoded[20:32]
 }
