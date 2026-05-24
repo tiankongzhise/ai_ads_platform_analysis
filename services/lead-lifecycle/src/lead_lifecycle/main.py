@@ -6,11 +6,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from lead_lifecycle.repository import MemoryRepository
+from lead_lifecycle.conflict import ConflictService
 from lead_lifecycle.service import CreateBatchRequest, LeadImportService
 
 
 repository = MemoryRepository()
 service = LeadImportService(repository)
+conflicts = ConflictService(repository)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -38,6 +40,43 @@ class Handler(BaseHTTPRequestHandler):
                 limit=int(params.get("limit", ["100"])[0]),
             )
             self._json({"success": True, "data": [lead.to_dict() for lead in leads]})
+            return
+        if parsed.path == "/api/conflicts":
+            params = parse_qs(parsed.query)
+            groups = repository.conflict_groups(
+                tenant_id=params.get("tenant_id", [""])[0],
+                status=params.get("status", [""])[0],
+            )
+            self._json({"success": True, "data": [group.to_dict() for group in groups]})
+            return
+        if parsed.path.startswith("/api/conflicts/"):
+            group_id = parsed.path.removeprefix("/api/conflicts/").strip("/")
+            group = repository.conflict_group(group_id)
+            if not group:
+                self._error(HTTPStatus.NOT_FOUND, "CONFLICT_NOT_FOUND", "冲突组不存在")
+                return
+            self._json({"success": True, "data": group.to_dict()})
+            return
+        if parsed.path == "/api/attributions/rules":
+            self._json(
+                {
+                    "success": True,
+                    "data": [
+                        {"code": "first_report", "name": "首次上报", "enabled": True},
+                        {"code": "first_visit", "name": "首次到校", "enabled": False},
+                        {"code": "first_enroll", "name": "首次报名", "enabled": False},
+                        {"code": "manual", "name": "手动裁定", "enabled": True},
+                    ],
+                }
+            )
+            return
+        if parsed.path == "/api/attributions":
+            params = parse_qs(parsed.query)
+            rows = repository.attributions(
+                tenant_id=params.get("tenant_id", [""])[0],
+                rule=params.get("rule", [""])[0],
+            )
+            self._json({"success": True, "data": [item.to_dict() for item in rows]})
             return
         self.send_error(404)
 
@@ -93,6 +132,35 @@ class Handler(BaseHTTPRequestHandler):
                 elif lead:
                     results.append(lead.to_dict())
             self._json({"success": True, "data": {"created": results, "errors": errors}})
+            return
+        if parsed.path.endswith("/resolve") and parsed.path.startswith("/api/conflicts/"):
+            group_id = parsed.path.removeprefix("/api/conflicts/").removesuffix("/resolve").strip("/")
+            payload = self._read_json()
+            try:
+                group = conflicts.resolve(
+                    group_id=group_id,
+                    primary_lead_id=payload.get("primary_lead_id", ""),
+                    rule=payload.get("rule", "manual"),
+                    resolved_by=payload.get("resolved_by", "system"),
+                )
+            except KeyError:
+                self._error(HTTPStatus.NOT_FOUND, "CONFLICT_NOT_FOUND", "冲突组不存在")
+                return
+            except ValueError as exc:
+                self._error(HTTPStatus.BAD_REQUEST, "CONFLICT_RESOLVE_INVALID", str(exc))
+                return
+            self._json({"success": True, "data": group.to_dict()})
+            return
+        if parsed.path == "/api/attributions/calculate":
+            payload = self._read_json()
+            groups = repository.conflict_groups(tenant_id=payload.get("tenant_id", ""))
+            recalculated = 0
+            for group in groups:
+                leads = repository.leads_by_phone_hash(group.tenant_id, group.phone_hash)
+                for lead in leads:
+                    conflicts.inspect_lead(lead)
+                    recalculated += 1
+            self._json({"success": True, "data": {"recalculated": recalculated}})
             return
         self.send_error(404)
 

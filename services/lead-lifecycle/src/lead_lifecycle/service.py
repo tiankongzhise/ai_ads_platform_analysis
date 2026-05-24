@@ -39,6 +39,9 @@ class CreateBatchRequest:
 class LeadImportService:
     def __init__(self, repository: MemoryRepository) -> None:
         self.repository = repository
+        from lead_lifecycle.conflict import ConflictService
+
+        self.conflicts = ConflictService(repository)
 
     def create_batch(self, req: CreateBatchRequest) -> ImportBatch:
         batch = ImportBatch(
@@ -81,6 +84,7 @@ class LeadImportService:
                 continue
             assert lead is not None
             self.repository.save_lead(lead)
+            self.conflicts.inspect_lead(lead)
             success_rows += 1
         batch.success_rows = success_rows
         batch.failed_rows = len(errors)
@@ -106,6 +110,7 @@ class LeadImportService:
         assert lead is not None
         self.repository.save_batch(batch)
         self.repository.save_lead(lead)
+        self.conflicts.inspect_lead(lead)
         batch.success_rows = 1
         batch.status = "success"
         batch.updated_at = utc_now()
@@ -194,4 +199,3 @@ def system_lead_no(tenant_id: str, team_id: str, phone_hash: str) -> str:
 
 def new_id() -> str:
     return str(uuid.uuid4())
-
