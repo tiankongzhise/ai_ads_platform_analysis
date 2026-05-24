@@ -35,6 +35,7 @@ psql $env:DATABASE_URL -f migrations/002_ad_oauth.sql
 psql $env:DATABASE_URL -f migrations/003_lead_lifecycle.sql
 psql $env:DATABASE_URL -f migrations/004_lead_conflict_attribution.sql
 psql $env:DATABASE_URL -f migrations/005_etl_facts.sql
+psql $env:DATABASE_URL -f migrations/006_bi_config.sql
 ```
 
 运行 PostgreSQL 集成测试：
@@ -149,6 +150,22 @@ curl.exe http://127.0.0.1:8091/api/analytics/funnel
 curl.exe http://127.0.0.1:8091/api/analytics/hourly-trend
 ```
 
+## BI 配置与扩展包验收
+
+data-insight 提供指标、维度、数据集、图表目录，以及租户看板布局和扩展包启用、禁用、回滚接口。前端“BI 配置”页面可创建看板、切换看板状态、管理租户扩展包，也可以直接调用：
+
+```powershell
+curl.exe http://127.0.0.1:8091/api/bi/catalog/metrics
+curl.exe http://127.0.0.1:8091/api/bi/catalog/dimensions
+curl.exe http://127.0.0.1:8091/api/bi/catalog/datasets
+curl.exe http://127.0.0.1:8091/api/bi/catalog/charts
+curl.exe "http://127.0.0.1:8091/api/bi/dashboards?tenant_id=demo-tenant"
+curl.exe -X POST http://127.0.0.1:8091/api/bi/dashboards -H "Content-Type: application/json" -d "{\"tenant_id\":\"demo-tenant\",\"dashboard_code\":\"growth_ops_dashboard\",\"name\":\"招生增长运营看板\"}"
+curl.exe -X POST http://127.0.0.1:8091/api/bi/extensions/advanced_roi_pack/enable -H "Content-Type: application/json" -d "{\"tenant_id\":\"demo-tenant\"}"
+curl.exe -X POST http://127.0.0.1:8091/api/bi/extensions/advanced_roi_pack/disable -H "Content-Type: application/json" -d "{\"tenant_id\":\"demo-tenant\"}"
+curl.exe -X POST http://127.0.0.1:8091/api/bi/extensions/advanced_roi_pack/rollback -H "Content-Type: application/json" -d "{\"tenant_id\":\"demo-tenant\"}"
+```
+
 ## 当前已落地接口
 
 - `GET /api/config`
@@ -204,3 +221,14 @@ curl.exe http://127.0.0.1:8091/api/analytics/hourly-trend
 - `GET /api/analytics/funnel`
 - `GET /api/analytics/conflicts`
 - `GET /api/analytics/hourly-trend`
+- `GET /api/bi/catalog/metrics`
+- `GET /api/bi/catalog/dimensions`
+- `GET /api/bi/catalog/datasets`
+- `GET /api/bi/catalog/charts`
+- `GET /api/bi/dashboards`
+- `POST /api/bi/dashboards`
+- `POST /api/bi/dashboards/{dashboard_id}`
+- `GET /api/bi/extensions`
+- `POST /api/bi/extensions/{extension_code}/enable`
+- `POST /api/bi/extensions/{extension_code}/disable`
+- `POST /api/bi/extensions/{extension_code}/rollback`

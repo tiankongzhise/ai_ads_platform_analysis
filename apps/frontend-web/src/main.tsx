@@ -252,6 +252,27 @@ type BIOverview = {
   metric_version: string;
 };
 
+type BICatalogItem = Record<string, unknown>;
+
+type BIDashboard = {
+  id: string;
+  tenant_id: string;
+  dashboard_code: string;
+  name: string;
+  layout: Record<string, unknown>;
+  filters: Record<string, unknown>;
+  status: string;
+};
+
+type BIExtension = {
+  id: string;
+  tenant_id: string;
+  extension_code: string;
+  version: string;
+  status: string;
+  manifest: Record<string, unknown>;
+};
+
 const platformOptions = [
   { value: 'douyin', label: '抖音/巨量引擎' },
   { value: 'tencent', label: '腾讯广告' },
@@ -319,6 +340,7 @@ function App() {
             { key: 'conflicts', icon: <TeamOutlined />, label: '线索冲突' },
             { key: 'etl', icon: <DashboardOutlined />, label: 'ETL 聚合' },
             { key: 'bi', icon: <DashboardOutlined />, label: '标准 BI' },
+            { key: 'bi-config', icon: <SettingOutlined />, label: 'BI 配置' },
             { key: 'overview', icon: <DashboardOutlined />, label: '平台概览' }
           ]}
         />
@@ -336,6 +358,7 @@ function App() {
           {active === 'conflicts' && <ConflictPage />}
           {active === 'etl' && <ETLPage />}
           {active === 'bi' && <BIPage />}
+          {active === 'bi-config' && <BIConfigPage />}
           {active === 'overview' && <OverviewPage />}
         </Content>
       </Layout>
@@ -1227,6 +1250,222 @@ function BIPage() {
       </Card>
     </Space>
   );
+}
+
+function BIConfigPage() {
+  const tenantId = 'demo-tenant';
+  const [metrics, setMetrics] = useState<BICatalogItem[]>([]);
+  const [dimensions, setDimensions] = useState<BICatalogItem[]>([]);
+  const [datasets, setDatasets] = useState<BICatalogItem[]>([]);
+  const [charts, setCharts] = useState<BICatalogItem[]>([]);
+  const [dashboards, setDashboards] = useState<BIDashboard[]>([]);
+  const [extensions, setExtensions] = useState<BIExtension[]>([]);
+  const [dashboardForm] = Form.useForm();
+  const [extensionForm] = Form.useForm();
+
+  const load = async () => {
+    const [metricRows, dimensionRows, datasetRows, chartRows, dashboardRows, extensionRows] = await Promise.all([
+      api<BICatalogItem[]>('/api/bi/catalog/metrics'),
+      api<BICatalogItem[]>('/api/bi/catalog/dimensions'),
+      api<BICatalogItem[]>('/api/bi/catalog/datasets'),
+      api<BICatalogItem[]>('/api/bi/catalog/charts'),
+      api<BIDashboard[]>(`/api/bi/dashboards?tenant_id=${encodeURIComponent(tenantId)}`),
+      api<BIExtension[]>(`/api/bi/extensions?tenant_id=${encodeURIComponent(tenantId)}`)
+    ]);
+    setMetrics(metricRows);
+    setDimensions(dimensionRows);
+    setDatasets(datasetRows);
+    setCharts(chartRows);
+    setDashboards(dashboardRows);
+    setExtensions(extensionRows);
+  };
+
+  useEffect(() => {
+    void load().catch(() => undefined);
+  }, []);
+
+  const updateDashboardStatus = async (row: BIDashboard) => {
+    await api<BIDashboard>(`/api/bi/dashboards/${row.id}`, {
+      method: 'POST',
+      body: JSON.stringify({ status: row.status === 'active' ? 'draft' : 'active' })
+    });
+    message.success('看板状态已更新');
+    await load();
+  };
+
+  const mutateExtension = async (extensionCode: string, action: 'enable' | 'disable' | 'rollback') => {
+    await api<BIExtension>(`/api/bi/extensions/${extensionCode}/${action}`, {
+      method: 'POST',
+      body: JSON.stringify({ tenant_id: tenantId })
+    });
+    message.success(`扩展包已${extensionActionLabel(action)}`);
+    await load();
+  };
+
+  const catalogColumns = [
+    { title: '编码', render: (_: unknown, row: BICatalogItem) => <Typography.Text code>{catalogCode(row)}</Typography.Text> },
+    { title: '名称', render: (_: unknown, row: BICatalogItem) => catalogText(row, ['name']) },
+    { title: '数据集/来源', render: (_: unknown, row: BICatalogItem) => catalogText(row, ['dataset_code', 'source_ref', 'source_type']) },
+    { title: '配置', render: (_: unknown, row: BICatalogItem) => <Typography.Text code>{compactJson(row)}</Typography.Text> }
+  ];
+
+  return (
+    <Space direction="vertical" size={16} className="page-stack">
+      <Typography.Title level={3}>BI 配置</Typography.Title>
+      <Card title="配置范围">
+        <Space size={16} wrap>
+          <Typography.Text>当前租户：<Typography.Text code>{tenantId}</Typography.Text></Typography.Text>
+          <Typography.Text>指标目录：{metrics.length}</Typography.Text>
+          <Typography.Text>维度目录：{dimensions.length}</Typography.Text>
+          <Typography.Text>数据集：{datasets.length}</Typography.Text>
+          <Typography.Text>图表类型：{charts.length}</Typography.Text>
+          <Button onClick={load}>刷新</Button>
+        </Space>
+      </Card>
+      <Card title="创建看板布局">
+        <Form
+          form={dashboardForm}
+          layout="inline"
+          initialValues={{ tenant_id: tenantId, dashboard_code: 'growth_ops_dashboard', name: '招生增长运营看板' }}
+          onFinish={async (values) => {
+            await api<BIDashboard>('/api/bi/dashboards', {
+              method: 'POST',
+              body: JSON.stringify({
+                ...values,
+                layout: {
+                  widgets: [
+                    { chart_code: 'kpi_card', metric_code: 'spend', position: { x: 0, y: 0, w: 4, h: 2 } },
+                    { chart_code: 'table', metric_code: 'leads_count', position: { x: 4, y: 0, w: 8, h: 4 } }
+                  ]
+                },
+                filters: { tenant_id: values.tenant_id }
+              })
+            });
+            message.success('BI 看板已创建');
+            dashboardForm.resetFields();
+            await load();
+          }}
+        >
+          <Form.Item name="tenant_id" rules={[{ required: true }]}><Input placeholder="租户 ID" /></Form.Item>
+          <Form.Item name="dashboard_code" rules={[{ required: true }]}><Input placeholder="看板编码" /></Form.Item>
+          <Form.Item name="name" rules={[{ required: true }]}><Input placeholder="看板名称" /></Form.Item>
+          <Button type="primary" htmlType="submit">创建</Button>
+        </Form>
+      </Card>
+      <Card title="租户看板">
+        <Table
+          rowKey="id"
+          dataSource={dashboards}
+          pagination={false}
+          columns={[
+            { title: '编码', dataIndex: 'dashboard_code' },
+            { title: '名称', dataIndex: 'name' },
+            { title: '状态', dataIndex: 'status', render: (status) => <Tag color={status === 'active' ? 'green' : 'orange'}>{status}</Tag> },
+            { title: '过滤器', render: (_, row) => <Typography.Text code>{compactJson(row.filters)}</Typography.Text> },
+            { title: '布局', render: (_, row) => <Typography.Text code>{compactJson(row.layout)}</Typography.Text> },
+            {
+              title: '操作',
+              render: (_, row) => <Button size="small" onClick={() => updateDashboardStatus(row)}>切换状态</Button>
+            }
+          ]}
+        />
+      </Card>
+      <Card title="BI 扩展包">
+        <Space direction="vertical" size={16} className="page-stack">
+          <Form
+            form={extensionForm}
+            layout="inline"
+            initialValues={{ extension_code: 'advanced_roi_pack' }}
+            onFinish={async (values) => {
+              await api<BIExtension>(`/api/bi/extensions/${values.extension_code}/enable`, {
+                method: 'POST',
+                body: JSON.stringify({ tenant_id: tenantId })
+              });
+              message.success('扩展包已启用');
+              extensionForm.resetFields();
+              await load();
+            }}
+          >
+            <Form.Item name="extension_code" rules={[{ required: true }]}>
+              <Select
+                style={{ width: 220 }}
+                options={[
+                  { label: '高级 ROI 扩展', value: 'advanced_roi_pack' },
+                  { label: '学校对比扩展', value: 'school_compare_pack' },
+                  { label: '冲突治理扩展', value: 'conflict_governance_pack' }
+                ]}
+              />
+            </Form.Item>
+            <Button type="primary" htmlType="submit">启用扩展</Button>
+          </Form>
+          <Table
+            rowKey="id"
+            dataSource={extensions}
+            pagination={false}
+            columns={[
+              { title: '扩展编码', dataIndex: 'extension_code' },
+              { title: '版本', dataIndex: 'version' },
+              { title: '状态', dataIndex: 'status', render: (status) => <Tag color={extensionStatusColor(status)}>{status}</Tag> },
+              { title: 'Manifest', render: (_, row) => <Typography.Text code>{compactJson(row.manifest)}</Typography.Text> },
+              {
+                title: '操作',
+                render: (_, row) => (
+                  <Space>
+                    <Button size="small" onClick={() => mutateExtension(row.extension_code, 'enable')}>启用</Button>
+                    <Button size="small" onClick={() => mutateExtension(row.extension_code, 'disable')}>禁用</Button>
+                    <Button size="small" onClick={() => mutateExtension(row.extension_code, 'rollback')}>回滚</Button>
+                  </Space>
+                )
+              }
+            ]}
+          />
+        </Space>
+      </Card>
+      <Card title="指标、维度、数据集与图表目录">
+        <Tabs
+          items={[
+            { key: 'metrics', label: '指标', children: <Table rowKey={(row) => catalogCode(row)} dataSource={metrics} pagination={false} columns={catalogColumns} /> },
+            { key: 'dimensions', label: '维度', children: <Table rowKey={(row) => catalogCode(row)} dataSource={dimensions} pagination={false} columns={catalogColumns} /> },
+            { key: 'datasets', label: '数据集', children: <Table rowKey={(row) => catalogCode(row)} dataSource={datasets} pagination={false} columns={catalogColumns} /> },
+            { key: 'charts', label: '图表', children: <Table rowKey={(row) => catalogCode(row)} dataSource={charts} pagination={false} columns={catalogColumns} /> }
+          ]}
+        />
+      </Card>
+    </Space>
+  );
+}
+
+function catalogText(row: BICatalogItem, keys: string[]) {
+  for (const key of keys) {
+    const value = row[key];
+    if (value !== undefined && value !== null && value !== '') {
+      return String(value);
+    }
+  }
+  return '-';
+}
+
+function catalogCode(row: BICatalogItem) {
+  return catalogText(row, ['metric_code', 'dimension_code', 'dataset_code', 'chart_code']);
+}
+
+function compactJson(value: unknown) {
+  const text = JSON.stringify(value);
+  return text.length > 120 ? `${text.slice(0, 120)}...` : text;
+}
+
+function extensionActionLabel(action: 'enable' | 'disable' | 'rollback') {
+  return action === 'enable' ? '启用' : action === 'disable' ? '禁用' : '回滚';
+}
+
+function extensionStatusColor(status: string) {
+  if (status === 'enabled') {
+    return 'green';
+  }
+  if (status === 'disabled') {
+    return 'orange';
+  }
+  return 'blue';
 }
 
 function OverviewPage() {
