@@ -34,3 +34,27 @@ func TestRunCreatesDemoAccountAndStoresSyncArtifacts(t *testing.T) {
 		t.Fatalf("expected stored report rows to match result")
 	}
 }
+
+func TestRunStoresXiaohongshuUnitArtifacts(t *testing.T) {
+	repository := store.NewMemoryStore()
+	service := NewService(repository, nil)
+	result, err := service.Run(context.Background(), RunRequest{
+		Platform: "xiaohongshu",
+		DateFrom: "2026-05-20",
+		DateTo:   "2026-05-20",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Job.Status != "success" {
+		t.Fatalf("expected success job, got %s", result.Job.Status)
+	}
+	entities := repository.AdEntities(store.AdEntityFilter{Platform: "xiaohongshu", EntityType: "unit"})
+	if len(entities) != 4 {
+		t.Fatalf("expected 4 xiaohongshu units, got %d", len(entities))
+	}
+	reports := repository.RawReportRows(store.RawReportFilter{Platform: "xiaohongshu", ReportType: "unit_daily"})
+	if len(reports) != 4 {
+		t.Fatalf("expected 4 xiaohongshu unit report rows, got %d", len(reports))
+	}
+}

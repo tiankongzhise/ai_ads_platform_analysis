@@ -36,8 +36,9 @@ type Registry struct {
 
 func NewRegistry() *Registry {
 	registry := &Registry{clients: map[string]Client{}}
-	registry.Register(NewLocalClient("douyin"))
-	registry.Register(NewLocalClient("tencent"))
+	for _, platformName := range []string{"douyin", "tencent", "baidu", "xiaohongshu"} {
+		registry.Register(NewLocalClient(platformName))
+	}
 	return registry
 }
 
@@ -54,6 +55,10 @@ func DefaultReportTypes(platform string) []string {
 	switch strings.ToLower(platform) {
 	case "douyin", "tencent":
 		return []string{"account_daily", "campaign_daily", "adgroup_daily", "account_hourly"}
+	case "baidu":
+		return []string{"account_daily", "campaign_daily", "adgroup_daily"}
+	case "xiaohongshu":
+		return []string{"account_daily", "campaign_daily", "unit_daily", "account_realtime"}
 	default:
 		return []string{"account_daily"}
 	}
@@ -120,15 +125,15 @@ func (c *LocalClient) entities(account store.Account, now time.Time) []store.AdE
 	}
 	accountName := account.AccountName
 	if accountName == "" {
-		accountName = c.displayName() + "账户"
+		accountName = c.displayName() + " account"
 	}
 	campaigns := []struct {
 		id     string
 		name   string
 		status string
 	}{
-		{id: accountExternalID + "_campaign_1", name: "2026春招线索计划", status: "enable"},
-		{id: accountExternalID + "_campaign_2", name: "开放日到校计划", status: "enable"},
+		{id: accountExternalID + "_campaign_1", name: "2026 spring lead campaign", status: "enable"},
+		{id: accountExternalID + "_campaign_2", name: "open day visit campaign", status: "enable"},
 	}
 	entities := []store.AdEntity{
 		{
@@ -159,23 +164,31 @@ func (c *LocalClient) entities(account store.Account, now time.Time) []store.AdE
 			SyncedAt:         now,
 		})
 		for unit := 1; unit <= 2; unit++ {
-			unitID := fmt.Sprintf("%s_adgroup_%d", campaign.id, unit)
+			unitType := c.unitEntityType()
+			unitID := fmt.Sprintf("%s_%s_%d", campaign.id, unitType, unit)
 			entities = append(entities, store.AdEntity{
-				ID:               entityID(account.ID, c.platform, "adgroup", unitID),
+				ID:               entityID(account.ID, c.platform, unitType, unitID),
 				TenantID:         account.TenantID,
 				AccountID:        account.ID,
 				Platform:         c.platform,
-				EntityType:       "adgroup",
+				EntityType:       unitType,
 				ExternalID:       unitID,
 				ParentExternalID: campaign.id,
-				Name:             fmt.Sprintf("%s-单元%d", campaign.name, unit),
+				Name:             fmt.Sprintf("%s-unit-%d", campaign.name, unit),
 				Status:           "enable",
-				Raw:              c.adgroupRaw(accountExternalID, campaign.id, unitID, index, unit),
+				Raw:              c.unitRaw(accountExternalID, campaign.id, unitID, index, unit),
 				SyncedAt:         now,
 			})
 		}
 	}
 	return entities
+}
+
+func (c *LocalClient) unitEntityType() string {
+	if c.platform == "xiaohongshu" {
+		return "unit"
+	}
+	return "adgroup"
 }
 
 func (c *LocalClient) reportRows(account store.Account, reportType string, dates []string, entities map[string][]store.AdEntity, now time.Time) []store.RawReportRow {
@@ -222,54 +235,94 @@ func (c *LocalClient) rowsForTargets(account store.Account, reportType string, g
 }
 
 func (c *LocalClient) accountRaw(externalID string, name string) map[string]any {
-	if c.platform == "douyin" {
+	switch c.platform {
+	case "douyin":
 		return map[string]any{"advertiser_id": externalID, "advertiser_name": name, "status": "STATUS_ENABLE", "sdk_model": "AdvertiserInfoV2"}
+	case "tencent":
+		return map[string]any{"account_id": externalID, "account_name": name, "account_type": "ACCOUNT_TYPE_ADVERTISER", "sdk_model": "AuthorizerStruct"}
+	case "baidu":
+		return map[string]any{"userName": externalID, "accountName": name, "header_model": "ApiRequestHeader", "sdk_service": "AccountService.getAccountInfo"}
+	case "xiaohongshu":
+		return map[string]any{"advertiser_id": externalID, "advertiser_name": name, "sdk_model": "realtime.AdvertiserRequest", "report_model": "DataReportDTO"}
+	default:
+		return map[string]any{"account_id": externalID, "account_name": name}
 	}
-	return map[string]any{"account_id": externalID, "account_name": name, "account_type": "ACCOUNT_TYPE_ADVERTISER", "sdk_model": "AuthorizerStruct"}
 }
 
 func (c *LocalClient) campaignRaw(accountID string, campaignID string, name string, status string) map[string]any {
-	if c.platform == "douyin" {
+	switch c.platform {
+	case "douyin":
 		return map[string]any{"advertiser_id": accountID, "campaign_id": campaignID, "campaign_name": name, "opt_status": status, "sdk_api": "CampaignGetV2Api"}
+	case "tencent":
+		return map[string]any{"account_id": accountID, "campaign_id": campaignID, "campaign_name": name, "configured_status": status, "sdk_api": "Campaigns().Get"}
+	case "baidu":
+		return map[string]any{"userName": accountID, "campaignId": campaignID, "campaignName": name, "status": status, "sdk_service": "CampaignService.getCampaign"}
+	case "xiaohongshu":
+		return map[string]any{"advertiser_id": accountID, "campaign_id": campaignID, "campaign_name": name, "campaign_filter_state": status, "sdk_model": "realtime.CampaignRequest"}
+	default:
+		return map[string]any{"account_id": accountID, "campaign_id": campaignID, "campaign_name": name}
 	}
-	return map[string]any{"account_id": accountID, "campaign_id": campaignID, "campaign_name": name, "configured_status": status, "sdk_api": "Campaigns().Get"}
 }
 
-func (c *LocalClient) adgroupRaw(accountID string, campaignID string, adgroupID string, campaignIndex int, unit int) map[string]any {
-	if c.platform == "douyin" {
-		return map[string]any{"advertiser_id": accountID, "campaign_id": campaignID, "ad_id": adgroupID, "name": fmt.Sprintf("douyin_ad_%d_%d", campaignIndex+1, unit), "sdk_api": "AdGetV2Api"}
+func (c *LocalClient) unitRaw(accountID string, campaignID string, unitID string, campaignIndex int, unit int) map[string]any {
+	switch c.platform {
+	case "douyin":
+		return map[string]any{"advertiser_id": accountID, "campaign_id": campaignID, "ad_id": unitID, "name": fmt.Sprintf("douyin_ad_%d_%d", campaignIndex+1, unit), "sdk_api": "AdGetV2Api"}
+	case "tencent":
+		return map[string]any{"account_id": accountID, "campaign_id": campaignID, "adgroup_id": unitID, "adgroup_name": fmt.Sprintf("tencent_adgroup_%d_%d", campaignIndex+1, unit), "sdk_api": "Adgroups().Get"}
+	case "baidu":
+		return map[string]any{"userName": accountID, "campaignId": campaignID, "adgroupId": unitID, "adgroupName": fmt.Sprintf("baidu_adgroup_%d_%d", campaignIndex+1, unit), "sdk_service": "AdgroupService.getAdgroup"}
+	case "xiaohongshu":
+		return map[string]any{"advertiser_id": accountID, "campaign_id": campaignID, "unit_id": unitID, "unit_name": fmt.Sprintf("xhs_unit_%d_%d", campaignIndex+1, unit), "sdk_model": "unit.Unit"}
+	default:
+		return map[string]any{"account_id": accountID, "campaign_id": campaignID, "unit_id": unitID}
 	}
-	return map[string]any{"account_id": accountID, "campaign_id": campaignID, "adgroup_id": adgroupID, "adgroup_name": fmt.Sprintf("tencent_adgroup_%d_%d", campaignIndex+1, unit), "sdk_api": "Adgroups().Get"}
 }
 
 func (c *LocalClient) reportRaw(reportType string, date string, hour string, target store.AdEntity, metrics store.ReportMetrics) map[string]any {
-	if c.platform == "douyin" {
-		raw := map[string]any{
-			"stat_cost":         metrics.Cost,
-			"show_cnt":          metrics.Impressions,
-			"click_cnt":         metrics.Clicks,
-			"convert_cnt":       metrics.Conversions,
-			"time_granularity":  reportGranularity(reportType),
-			"stat_datetime":     date,
-			"sdk_response_body": "data.list[]",
-		}
-		if target.EntityType == "account" {
-			raw["advertiser_id"] = target.ExternalID
-			raw["sdk_api"] = "ReportAdvertiserGetV2Api"
-		}
-		if target.EntityType == "campaign" {
-			raw["campaign_id"] = target.ExternalID
-			raw["sdk_api"] = "ReportCampaignGetV2Api"
-		}
-		if target.EntityType == "adgroup" {
-			raw["ad_id"] = target.ExternalID
-			raw["sdk_api"] = "ReportAdGetV2Api"
-		}
-		if hour != "" {
-			raw["stat_datetime"] = date + " " + hour + ":00:00"
-		}
-		return raw
+	switch c.platform {
+	case "douyin":
+		return c.douyinReportRaw(reportType, date, hour, target, metrics)
+	case "tencent":
+		return c.tencentReportRaw(date, hour, target, metrics)
+	case "baidu":
+		return c.baiduReportRaw(reportType, date, target, metrics)
+	case "xiaohongshu":
+		return c.xiaohongshuReportRaw(reportType, date, target, metrics)
+	default:
+		return map[string]any{"date": date, "cost": metrics.Cost, "impressions": metrics.Impressions, "clicks": metrics.Clicks, "conversions": metrics.Conversions}
 	}
+}
+
+func (c *LocalClient) douyinReportRaw(reportType string, date string, hour string, target store.AdEntity, metrics store.ReportMetrics) map[string]any {
+	raw := map[string]any{
+		"stat_cost":         metrics.Cost,
+		"show_cnt":          metrics.Impressions,
+		"click_cnt":         metrics.Clicks,
+		"convert_cnt":       metrics.Conversions,
+		"time_granularity":  reportGranularity(reportType),
+		"stat_datetime":     date,
+		"sdk_response_body": "data.list[]",
+	}
+	if target.EntityType == "account" {
+		raw["advertiser_id"] = target.ExternalID
+		raw["sdk_api"] = "ReportAdvertiserGetV2Api"
+	}
+	if target.EntityType == "campaign" {
+		raw["campaign_id"] = target.ExternalID
+		raw["sdk_api"] = "ReportCampaignGetV2Api"
+	}
+	if target.EntityType == "adgroup" {
+		raw["ad_id"] = target.ExternalID
+		raw["sdk_api"] = "ReportAdGetV2Api"
+	}
+	if hour != "" {
+		raw["stat_datetime"] = date + " " + hour + ":00:00"
+	}
+	return raw
+}
+
+func (c *LocalClient) tencentReportRaw(date string, hour string, target store.AdEntity, metrics store.ReportMetrics) map[string]any {
 	raw := map[string]any{
 		"date":              date,
 		"view_count":        metrics.Impressions,
@@ -293,18 +346,84 @@ func (c *LocalClient) reportRaw(reportType string, date string, hour string, tar
 	return raw
 }
 
-func (c *LocalClient) sdkReferences() []string {
-	if c.platform == "douyin" {
-		return []string{"ReportAdvertiserGetV2Api", "ReportCampaignGetV2Api", "ReportAdGetV2Api"}
+func (c *LocalClient) baiduReportRaw(reportType string, date string, target store.AdEntity, metrics store.ReportMetrics) map[string]any {
+	raw := map[string]any{
+		"date":              date,
+		"userName":          target.ExternalID,
+		"reportType":        reportType,
+		"cost":              metrics.Cost,
+		"impression":        metrics.Impressions,
+		"click":             metrics.Clicks,
+		"conversion":        metrics.Conversions,
+		"header_model":      "ApiRequestHeader",
+		"sdk_service":       "ReportService",
+		"sdk_response_body": "body.data[]",
 	}
-	return []string{"DailyReports().Get", "HourlyReports().Get"}
+	if target.EntityType == "campaign" {
+		raw["campaignId"] = target.ExternalID
+	}
+	if target.EntityType == "adgroup" {
+		raw["adgroupId"] = target.ExternalID
+	}
+	return raw
+}
+
+func (c *LocalClient) xiaohongshuReportRaw(reportType string, date string, target store.AdEntity, metrics store.ReportMetrics) map[string]any {
+	raw := map[string]any{
+		"date":              date,
+		"advertiser_id":     target.ExternalID,
+		"report_type":       reportType,
+		"fee":               metrics.Cost,
+		"impression":        metrics.Impressions,
+		"click":             metrics.Clicks,
+		"leads":             metrics.Conversions,
+		"sdk_response_body": "DataReportDTO",
+	}
+	if reportType == "account_realtime" {
+		raw["sdk_model"] = "realtime.AdvertiserRequest"
+		raw["time_unit"] = "SUMMARY"
+		return raw
+	}
+	if target.EntityType == "campaign" {
+		raw["campaign_id"] = target.ExternalID
+		raw["sdk_model"] = "realtime.CampaignRequest"
+	}
+	if target.EntityType == "unit" {
+		raw["unit_id"] = target.ExternalID
+		raw["sdk_model"] = "offline.Request"
+		raw["time_unit"] = "DAY"
+	}
+	return raw
+}
+
+func (c *LocalClient) sdkReferences() []string {
+	switch c.platform {
+	case "douyin":
+		return []string{"ReportAdvertiserGetV2Api", "ReportCampaignGetV2Api", "ReportAdGetV2Api"}
+	case "tencent":
+		return []string{"DailyReports().Get", "HourlyReports().Get"}
+	case "baidu":
+		return []string{"ApiRequestHeader", "OAuthAuthorizedToolAPI", "ReportService"}
+	case "xiaohongshu":
+		return []string{"realtime.AdvertiserRequest", "realtime.CampaignRequest", "offline.Request", "DataReportDTO"}
+	default:
+		return nil
+	}
 }
 
 func (c *LocalClient) displayName() string {
-	if c.platform == "douyin" {
-		return "抖音/巨量引擎"
+	switch c.platform {
+	case "douyin":
+		return "Douyin Ocean Engine"
+	case "tencent":
+		return "Tencent Ads"
+	case "baidu":
+		return "Baidu Marketing"
+	case "xiaohongshu":
+		return "Xiaohongshu Spotlight"
+	default:
+		return c.platform
 	}
-	return "腾讯广告"
 }
 
 func syncDates(dateFrom string, dateTo string, now time.Time) ([]string, error) {
@@ -349,8 +468,12 @@ func reportShape(reportType string) (string, string) {
 		return "campaign", "day"
 	case "adgroup_daily":
 		return "adgroup", "day"
+	case "unit_daily":
+		return "unit", "day"
 	case "account_hourly":
 		return "account", "hour"
+	case "account_realtime":
+		return "account", "day"
 	default:
 		return "account", "day"
 	}
@@ -387,7 +510,7 @@ func deterministicMetrics(platform string, reportType string, externalID string,
 	if strings.Contains(reportType, "campaign") {
 		cost *= 1.25
 	}
-	if strings.Contains(reportType, "adgroup") {
+	if strings.Contains(reportType, "adgroup") || strings.Contains(reportType, "unit") {
 		cost *= 0.7
 	}
 	return store.ReportMetrics{

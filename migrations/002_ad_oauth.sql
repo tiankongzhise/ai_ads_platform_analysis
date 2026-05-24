@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS ad_sync.ad_entities (
   tenant_id uuid NOT NULL,
   account_id uuid NOT NULL,
   platform text NOT NULL,
-  entity_type text NOT NULL CHECK (entity_type IN ('account', 'campaign', 'adgroup', 'ad')),
+  entity_type text NOT NULL CHECK (entity_type IN ('account', 'campaign', 'adgroup', 'unit', 'ad')),
   external_id text NOT NULL,
   parent_external_id text,
   name text,
