@@ -36,6 +36,7 @@ psql $env:DATABASE_URL -f migrations/003_lead_lifecycle.sql
 psql $env:DATABASE_URL -f migrations/004_lead_conflict_attribution.sql
 psql $env:DATABASE_URL -f migrations/005_etl_facts.sql
 psql $env:DATABASE_URL -f migrations/006_bi_config.sql
+psql $env:DATABASE_URL -f migrations/007_reports.sql
 ```
 
 运行 PostgreSQL 集成测试：
@@ -166,6 +167,19 @@ curl.exe -X POST http://127.0.0.1:8091/api/bi/extensions/advanced_roi_pack/disab
 curl.exe -X POST http://127.0.0.1:8091/api/bi/extensions/advanced_roi_pack/rollback -H "Content-Type: application/json" -d "{\"tenant_id\":\"demo-tenant\"}"
 ```
 
+## 报表中心验收
+
+data-insight 支持同步生成 Excel 报表任务，导出文件使用下载 token 校验；同一接口会返回行动建议和 BI 口径一致性校验结果。前端“报表中心”页面可创建标准汇总、集团总览、团队效率、渠道 ROI、招生漏斗、冲突治理和小时趋势报表，也可以直接调用：
+
+```powershell
+curl.exe http://127.0.0.1:8091/api/reports/advice
+curl.exe http://127.0.0.1:8091/api/reports/consistency
+curl.exe "http://127.0.0.1:8091/api/reports?tenant_id=demo-tenant"
+curl.exe -X POST http://127.0.0.1:8091/api/reports -H "Content-Type: application/json" -d "{\"tenant_id\":\"demo-tenant\",\"report_type\":\"standard_summary\",\"format\":\"xlsx\",\"created_by\":\"demo-manager\"}"
+```
+
+创建任务返回的 `download_url` 可直接下载 `.xlsx` 文件；下载失败会返回 `invalid download token`。
+
 ## 当前已落地接口
 
 - `GET /api/config`
@@ -232,3 +246,9 @@ curl.exe -X POST http://127.0.0.1:8091/api/bi/extensions/advanced_roi_pack/rollb
 - `POST /api/bi/extensions/{extension_code}/enable`
 - `POST /api/bi/extensions/{extension_code}/disable`
 - `POST /api/bi/extensions/{extension_code}/rollback`
+- `GET /api/reports`
+- `POST /api/reports`
+- `GET /api/reports/{report_id}`
+- `GET /api/reports/{report_id}/download`
+- `GET /api/reports/advice`
+- `GET /api/reports/consistency`

@@ -273,6 +273,30 @@ type BIExtension = {
   manifest: Record<string, unknown>;
 };
 
+type ReportTask = {
+  id: string;
+  tenant_id: string;
+  report_type: string;
+  status: string;
+  format: string;
+  file_name: string;
+  download_url: string;
+  row_count: number;
+  summary: Record<string, unknown>;
+  consistency: { status: string; checks: Record<string, unknown>[] };
+  advice: ReportAdvice[];
+  created_at: string;
+  completed_at: string;
+};
+
+type ReportAdvice = {
+  severity: string;
+  metric_code: string;
+  title: string;
+  detail: string;
+  action: string;
+};
+
 const platformOptions = [
   { value: 'douyin', label: '抖音/巨量引擎' },
   { value: 'tencent', label: '腾讯广告' },
@@ -341,6 +365,7 @@ function App() {
             { key: 'etl', icon: <DashboardOutlined />, label: 'ETL 聚合' },
             { key: 'bi', icon: <DashboardOutlined />, label: '标准 BI' },
             { key: 'bi-config', icon: <SettingOutlined />, label: 'BI 配置' },
+            { key: 'reports', icon: <ImportOutlined />, label: '报表中心' },
             { key: 'overview', icon: <DashboardOutlined />, label: '平台概览' }
           ]}
         />
@@ -359,6 +384,7 @@ function App() {
           {active === 'etl' && <ETLPage />}
           {active === 'bi' && <BIPage />}
           {active === 'bi-config' && <BIConfigPage />}
+          {active === 'reports' && <ReportPage />}
           {active === 'overview' && <OverviewPage />}
         </Content>
       </Layout>
@@ -1463,6 +1489,140 @@ function extensionStatusColor(status: string) {
     return 'green';
   }
   if (status === 'disabled') {
+    return 'orange';
+  }
+  return 'blue';
+}
+
+function ReportPage() {
+  const tenantId = 'demo-tenant';
+  const [tasks, setTasks] = useState<ReportTask[]>([]);
+  const [advice, setAdvice] = useState<ReportAdvice[]>([]);
+  const [consistency, setConsistency] = useState<{ status: string; checks: Record<string, unknown>[] }>({ status: 'unknown', checks: [] });
+  const [form] = Form.useForm();
+
+  const load = async () => {
+    const [taskRows, adviceRows, consistencyResult] = await Promise.all([
+      api<ReportTask[]>(`/api/reports?tenant_id=${encodeURIComponent(tenantId)}`),
+      api<ReportAdvice[]>('/api/reports/advice'),
+      api<{ status: string; checks: Record<string, unknown>[] }>('/api/reports/consistency')
+    ]);
+    setTasks(taskRows);
+    setAdvice(adviceRows);
+    setConsistency(consistencyResult);
+  };
+
+  useEffect(() => {
+    void load().catch(() => undefined);
+  }, []);
+
+  return (
+    <Space direction="vertical" size={16} className="page-stack">
+      <Typography.Title level={3}>报表中心</Typography.Title>
+      <Card title="生成报表">
+        <Form
+          form={form}
+          layout="inline"
+          initialValues={{ tenant_id: tenantId, report_type: 'standard_summary', format: 'xlsx', created_by: 'frontend-user' }}
+          onFinish={async (values) => {
+            await api<ReportTask>('/api/reports', {
+              method: 'POST',
+              body: JSON.stringify({
+                tenant_id: values.tenant_id,
+                report_type: values.report_type,
+                format: values.format,
+                created_by: values.created_by,
+                parameters: { source: 'frontend' }
+              })
+            });
+            message.success('报表任务已生成');
+            await load();
+          }}
+        >
+          <Form.Item name="tenant_id" rules={[{ required: true }]}><Input placeholder="租户 ID" /></Form.Item>
+          <Form.Item name="report_type" rules={[{ required: true }]}>
+            <Select
+              style={{ width: 180 }}
+              options={[
+                { label: '标准汇总', value: 'standard_summary' },
+                { label: '集团总览', value: 'group_overview' },
+                { label: '团队效率', value: 'team_efficiency' },
+                { label: '渠道 ROI', value: 'channel_roi' },
+                { label: '招生漏斗', value: 'funnel' },
+                { label: '冲突治理', value: 'conflicts' },
+                { label: '小时趋势', value: 'hourly_trend' }
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="format" rules={[{ required: true }]}>
+            <Select style={{ width: 120 }} options={[{ label: 'Excel', value: 'xlsx' }]} />
+          </Form.Item>
+          <Form.Item name="created_by"><Input placeholder="创建人" /></Form.Item>
+          <Button type="primary" htmlType="submit">生成</Button>
+          <Button onClick={load}>刷新</Button>
+        </Form>
+      </Card>
+      <Card title="任务列表">
+        <Table
+          rowKey="id"
+          dataSource={tasks}
+          pagination={{ pageSize: 6 }}
+          columns={[
+            { title: '报表类型', dataIndex: 'report_type' },
+            { title: '状态', dataIndex: 'status', render: (status) => <Tag color={status === 'success' ? 'green' : 'blue'}>{status}</Tag> },
+            { title: '文件', dataIndex: 'file_name' },
+            { title: '行数', dataIndex: 'row_count' },
+            { title: '口径', render: (_, row) => <Tag color={row.consistency.status === 'passed' ? 'green' : 'red'}>{row.consistency.status}</Tag> },
+            { title: '完成时间', dataIndex: 'completed_at' },
+            {
+              title: '下载',
+              render: (_, row) => <Button size="small" onClick={() => window.open(row.download_url, '_blank')}>下载</Button>
+            }
+          ]}
+        />
+      </Card>
+      <Card title="行动建议">
+        <Table
+          rowKey={(row) => `${row.metric_code}-${row.title}`}
+          dataSource={advice}
+          pagination={false}
+          columns={[
+            { title: '等级', dataIndex: 'severity', render: (severity) => <Tag color={adviceSeverityColor(severity)}>{severity}</Tag> },
+            { title: '指标', dataIndex: 'metric_code' },
+            { title: '标题', dataIndex: 'title' },
+            { title: '说明', dataIndex: 'detail' },
+            { title: '建议动作', dataIndex: 'action' }
+          ]}
+        />
+      </Card>
+      <Card title="BI 口径一致性">
+        <Space direction="vertical" className="page-stack">
+          <Space size={16} wrap>
+            <Typography.Text>校验结果：<Tag color={consistency.status === 'passed' ? 'green' : 'red'}>{consistency.status}</Tag></Typography.Text>
+            <Typography.Text>校验项：{consistency.checks.length}</Typography.Text>
+          </Space>
+          <Table
+            rowKey={(row) => String(row.metric_code)}
+            dataSource={consistency.checks}
+            pagination={false}
+            columns={[
+              { title: '指标', dataIndex: 'metric_code' },
+              { title: '报表值', render: (_, row) => String(row.report_value) },
+              { title: 'BI 值', render: (_, row) => String(row.bi_value) },
+              { title: '是否一致', dataIndex: 'matched', render: (matched) => <Tag color={matched ? 'green' : 'red'}>{String(matched)}</Tag> }
+            ]}
+          />
+        </Space>
+      </Card>
+    </Space>
+  );
+}
+
+function adviceSeverityColor(severity: string) {
+  if (severity === 'high') {
+    return 'red';
+  }
+  if (severity === 'medium') {
     return 'orange';
   }
   return 'blue';
