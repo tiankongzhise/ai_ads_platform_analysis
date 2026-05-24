@@ -14,7 +14,8 @@ export default defineConfig({
       '/api/leads': 'http://127.0.0.1:8090',
       '/api/conflicts': 'http://127.0.0.1:8090',
       '/api/attributions': 'http://127.0.0.1:8090',
-      '/api/etl': 'http://127.0.0.1:8091'
+      '/api/etl': 'http://127.0.0.1:8091',
+      '/api/analytics': 'http://127.0.0.1:8091'
     }
   }
 });

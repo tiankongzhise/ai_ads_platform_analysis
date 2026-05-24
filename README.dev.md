@@ -137,6 +137,18 @@ curl.exe -X POST http://127.0.0.1:8091/api/etl/run -H "Content-Type: application
 curl.exe http://127.0.0.1:8091/api/etl/facts/hourly
 ```
 
+## 标准 BI 验收
+
+data-insight 基于 ETL 标准事实表提供集团总览、团队效率、渠道 ROI、招生漏斗、冲突和小时趋势接口。前端“标准 BI”页面可直接查看，也可以直接调用：
+
+```powershell
+curl.exe http://127.0.0.1:8091/api/analytics/group-overview
+curl.exe http://127.0.0.1:8091/api/analytics/team-efficiency
+curl.exe http://127.0.0.1:8091/api/analytics/channel-roi
+curl.exe http://127.0.0.1:8091/api/analytics/funnel
+curl.exe http://127.0.0.1:8091/api/analytics/hourly-trend
+```
+
 ## 当前已落地接口
 
 - `GET /api/config`
@@ -186,3 +198,9 @@ curl.exe http://127.0.0.1:8091/api/etl/facts/hourly
 - `GET /api/etl/facts/ad-daily`
 - `GET /api/etl/facts/lead-daily`
 - `GET /api/etl/facts/hourly`
+- `GET /api/analytics/group-overview`
+- `GET /api/analytics/team-efficiency`
+- `GET /api/analytics/channel-roi`
+- `GET /api/analytics/funnel`
+- `GET /api/analytics/conflicts`
+- `GET /api/analytics/hourly-trend`

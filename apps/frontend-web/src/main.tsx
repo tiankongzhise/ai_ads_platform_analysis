@@ -243,6 +243,15 @@ type FactHourlyAggregate = {
   metrics: Record<string, number>;
 };
 
+type BIOverview = {
+  spend: number;
+  leads_count: number;
+  enroll_count: number;
+  cost_per_lead: number;
+  conversion_rate: number;
+  metric_version: string;
+};
+
 const platformOptions = [
   { value: 'douyin', label: '抖音/巨量引擎' },
   { value: 'tencent', label: '腾讯广告' },
@@ -309,6 +318,7 @@ function App() {
             { key: 'leads', icon: <ImportOutlined />, label: '线索导入' },
             { key: 'conflicts', icon: <TeamOutlined />, label: '线索冲突' },
             { key: 'etl', icon: <DashboardOutlined />, label: 'ETL 聚合' },
+            { key: 'bi', icon: <DashboardOutlined />, label: '标准 BI' },
             { key: 'overview', icon: <DashboardOutlined />, label: '平台概览' }
           ]}
         />
@@ -325,6 +335,7 @@ function App() {
           {active === 'leads' && <LeadImportPage />}
           {active === 'conflicts' && <ConflictPage />}
           {active === 'etl' && <ETLPage />}
+          {active === 'bi' && <BIPage />}
           {active === 'overview' && <OverviewPage />}
         </Content>
       </Layout>
@@ -1113,6 +1124,97 @@ function ETLPage() {
         <Table
           rowKey={(row) => `${row.hour_start}-${row.platform}-${row.team_id}-${row.channel_id}`}
           dataSource={hourlyFacts}
+          pagination={{ pageSize: 8 }}
+          columns={[
+            { title: '小时', dataIndex: 'hour_start' },
+            { title: '平台', dataIndex: 'platform' },
+            { title: '团队', dataIndex: 'team_id' },
+            { title: '渠道', dataIndex: 'channel_id' },
+            { title: '指标', render: (_, row) => <Typography.Text code>{JSON.stringify(row.metrics)}</Typography.Text> }
+          ]}
+        />
+      </Card>
+    </Space>
+  );
+}
+
+function BIPage() {
+  const [overview, setOverview] = useState<BIOverview | null>(null);
+  const [teams, setTeams] = useState<Record<string, unknown>[]>([]);
+  const [channels, setChannels] = useState<Record<string, unknown>[]>([]);
+  const [funnel, setFunnel] = useState<Record<string, number>>({});
+  const [conflicts, setConflicts] = useState<Record<string, number>>({});
+  const [hourly, setHourly] = useState<FactHourlyAggregate[]>([]);
+
+  const load = async () => {
+    setOverview(await api<BIOverview>('/api/analytics/group-overview'));
+    setTeams(await api<Record<string, unknown>[]>('/api/analytics/team-efficiency'));
+    setChannels(await api<Record<string, unknown>[]>('/api/analytics/channel-roi'));
+    setFunnel(await api<Record<string, number>>('/api/analytics/funnel'));
+    setConflicts(await api<Record<string, number>>('/api/analytics/conflicts'));
+    setHourly(await api<FactHourlyAggregate[]>('/api/analytics/hourly-trend'));
+  };
+
+  useEffect(() => {
+    void load().catch(() => undefined);
+  }, []);
+
+  return (
+    <Space direction="vertical" size={16} className="page-stack">
+      <Typography.Title level={3}>标准 BI</Typography.Title>
+      <Card title="集团总览">
+        <Space size={24} wrap>
+          <Typography.Text>消耗：{overview?.spend?.toFixed(2) || '0.00'}</Typography.Text>
+          <Typography.Text>线索：{overview?.leads_count || 0}</Typography.Text>
+          <Typography.Text>报名：{overview?.enroll_count || 0}</Typography.Text>
+          <Typography.Text>线索成本：{overview?.cost_per_lead?.toFixed(2) || '0.00'}</Typography.Text>
+          <Typography.Text>转化率：{overview ? `${(overview.conversion_rate * 100).toFixed(2)}%` : '0.00%'}</Typography.Text>
+          <Tag>{overview?.metric_version || 'metric-v1'}</Tag>
+        </Space>
+      </Card>
+      <Card title="团队效率">
+        <Table
+          rowKey={(row) => String(row.team_id)}
+          dataSource={teams}
+          pagination={false}
+          columns={[
+            { title: '团队', dataIndex: 'team_id' },
+            { title: '线索', dataIndex: 'leads_count' },
+            { title: '有效', dataIndex: 'valid_leads_count' },
+            { title: '到校', dataIndex: 'visit_count' },
+            { title: '报名', dataIndex: 'enroll_count' },
+            { title: '冲突', dataIndex: 'conflict_count' },
+            { title: '有效率', render: (_, row) => `${(Number(row.valid_rate || 0) * 100).toFixed(2)}%` }
+          ]}
+        />
+      </Card>
+      <Card title="渠道 ROI">
+        <Table
+          rowKey={(row) => String(row.channel)}
+          dataSource={channels}
+          pagination={false}
+          columns={[
+            { title: '渠道', dataIndex: 'channel' },
+            { title: '消耗', render: (_, row) => Number(row.spend || 0).toFixed(2) },
+            { title: '线索', dataIndex: 'leads_count' },
+            { title: '线索成本', render: (_, row) => Number(row.cost_per_lead || 0).toFixed(2) }
+          ]}
+        />
+      </Card>
+      <Card title="招生漏斗与冲突">
+        <Space size={24} wrap>
+          <Typography.Text>线索：{funnel.leads || 0}</Typography.Text>
+          <Typography.Text>有效：{funnel.valid || 0}</Typography.Text>
+          <Typography.Text>到校：{funnel.visited || 0}</Typography.Text>
+          <Typography.Text>报名：{funnel.enrolled || 0}</Typography.Text>
+          <Typography.Text>冲突：{conflicts.conflict_count || 0}</Typography.Text>
+          <Typography.Text>冲突率：{`${(Number(conflicts.conflict_rate || 0) * 100).toFixed(2)}%`}</Typography.Text>
+        </Space>
+      </Card>
+      <Card title="小时趋势">
+        <Table
+          rowKey={(row) => `${row.hour_start}-${row.platform}-${row.team_id}-${row.channel_id}`}
+          dataSource={hourly}
           pagination={{ pageSize: 8 }}
           columns={[
             { title: '小时', dataIndex: 'hour_start' },
